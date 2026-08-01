@@ -4,6 +4,16 @@
 
 Русская версия: [README.ru.md](./README.ru.md)
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/stop-notify.png" alt="Stop notify with Continue / Done" width="420" />
+  &nbsp;
+  <img src="docs/menu.png" alt="/menu skills and modes" width="420" />
+</p>
+
+<p align="center"><sub>Stop notify · <code>/menu</code></sub></p>
+
 ## Features
 
 - **Stop notify** — one Telegram message when an Agent turn completes (summary + buttons)

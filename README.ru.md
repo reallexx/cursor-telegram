@@ -4,6 +4,16 @@
 
 English: [README.md](./README.md)
 
+## Скриншоты
+
+<p align="center">
+  <img src="docs/stop-notify.png" alt="Стоп-уведомление с Продолжить / Готово" width="420" />
+  &nbsp;
+  <img src="docs/menu.png" alt="Меню /menu" width="420" />
+</p>
+
+<p align="center"><sub>Стоп-уведомление · <code>/menu</code></sub></p>
+
 ## Возможности
 
 - **Стоп-уведомление** — одно сообщение в Telegram после ответа агента (кратко + кнопки)
