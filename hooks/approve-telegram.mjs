@@ -24,7 +24,8 @@ const {
   isSensitiveMcp,
   escapeHtml,
   truncate,
-  fingerprint,
+  sessionFingerprint,
+  isSessionAllowUseful,
   isSessionAllowed,
   grantSessionAllow,
   editMessageHtml,
@@ -63,7 +64,9 @@ function resolveRequest(payload, locale) {
       title: t(locale, "shell_title"),
       detail: payload.command,
       cwd: payload.cwd || "",
-      fp: fingerprint("shell", payload.command),
+      fp: sessionFingerprint("shell", payload.command, {
+        cwd: payload.cwd || "",
+      }),
     };
   }
 
@@ -76,15 +79,16 @@ function resolveRequest(payload, locale) {
     typeof input.command === "string"
       ? `${toolName}: ${input.command}`
       : `${toolName}: ${truncate(JSON.stringify(input), 1200)}`;
+  const cwd = payload.cwd || input.working_directory || "";
 
   return {
     kind: "mcp",
     title: toolName,
     detail,
-    cwd: payload.cwd || input.working_directory || "",
+    cwd,
     toolName,
     toolInput: input,
-    fp: fingerprint("mcp", `${toolName}|${JSON.stringify(input).slice(0, 400)}`),
+    fp: sessionFingerprint("mcp", detail, { cwd, toolName }),
   };
 }
 
@@ -197,6 +201,22 @@ async function main() {
     html,
   });
 
+  const showSession = isSessionAllowUseful(req.kind, req.detail, {
+    toolName: req.toolName,
+  });
+  const approveRow = [
+    { text: t(L, "allow"), callback_data: `a:${id}` },
+    ...(showSession
+      ? [
+          {
+            text: formatAllowForLabel(L, cfg.session_allow_min),
+            callback_data: `s:${id}`,
+          },
+        ]
+      : []),
+    { text: t(L, "deny"), callback_data: `d:${id}` },
+  ];
+
   let sent;
   try {
     sent = await tg(cfg.token, "sendMessage", {
@@ -205,16 +225,7 @@ async function main() {
       parse_mode: "HTML",
       disable_web_page_preview: true,
       reply_markup: {
-        inline_keyboard: [
-          [
-            { text: t(L, "allow"), callback_data: `a:${id}` },
-            {
-              text: formatAllowForLabel(L, cfg.session_allow_min),
-              callback_data: `s:${id}`,
-            },
-            { text: t(L, "deny"), callback_data: `d:${id}` },
-          ],
-        ],
+        inline_keyboard: [approveRow],
       },
     });
   } catch (err) {

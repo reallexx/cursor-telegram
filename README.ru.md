@@ -81,7 +81,7 @@ PowerShell:
 | `followup_wait_sec=forever` | Ждать Continue/текст (лимит ≈ timeout хука ~24д) |
 | `approve_shell` / `approve_mcp` | Спрашивать в боте |
 | `approve_*_mode=sensitive` | Только «опасные» (`all` — всё) |
-| `session_allow_min` | Длительность сессии (кнопка: д/ч/мин, нули не показываются) |
+| `session_allow_min` | Длительность «Разрешить на N»; кнопка только для повторяемых типов (`git push`, сеть, …) |
 | `locale` | `auto` (ОС) · `ru` · `en` — язык бота (или env `TELEGRAM_LOCALE`) |
 
 В `hooks.json` у stop/approve **`timeout` ≤ 2147000** секунд. Больше → переполнение int32 → хук умирает сразу.
@@ -122,7 +122,7 @@ PowerShell:
 | [cursor-autopilot](https://github.com/heyzgj/cursor-autopilot) | **Расширение** + rules | Адаптеры Telegram / почта / Feishu |
 | [cursor-claw](https://github.com/jes/cursor-claw) | Telegram → `cursor agent` **CLI** | Отдельная сессия агента, не открытый чат IDE |
 
-Не путать с Telegram **MCP** (Composio и т.п.): агент *зывает* API Telegram, а не управляет твоей сессией Cursor.
+Не путать с Telegram **MCP** (Composio и т.п.): агент *вызывает* API Telegram, а не управляет твоей сессией Cursor.
 
 ## Лицензия
 

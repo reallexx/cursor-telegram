@@ -156,6 +156,81 @@ export function fingerprint(kind, detail) {
   return h.digest("hex").slice(0, 24);
 }
 
+/** Normalize cwd so the same project folder matches across slash styles. */
+function normalizeCwdKey(cwd) {
+  return String(cwd || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+/** Families where "Allow for N" is useful (will match future similar commands). */
+const REUSABLE_SHELL_FAMILIES = new Set([
+  "shell:git-push",
+  "shell:git-commit",
+  "shell:npm-publish",
+  "shell:gh-repo-delete",
+  "shell:docker-push",
+  "shell:kubectl-apply",
+  "shell:network",
+  "shell:remote-copy",
+  "shell:destructive-delete",
+]);
+
+/**
+ * Coarse family for session-allow (not the full command text).
+ * So "Allow for 7d" on one `git push …` covers later pushes in the same cwd.
+ */
+export function commandFamily(kind, detail, { toolName } = {}) {
+  if (kind === "mcp") {
+    const name = String(toolName || detail || "mcp")
+      .replace(/^MCP:\s*/i, "")
+      .split(/[|\s]/)[0]
+      .slice(0, 80);
+    return `mcp:${name || "tool"}`;
+  }
+
+  const c = String(detail || "").replace(/\s+/g, " ").trim();
+  if (/git\s+push/i.test(c)) return "shell:git-push";
+  if (/git\s+commit/i.test(c)) return "shell:git-commit";
+  if (/npm\s+publish/i.test(c)) return "shell:npm-publish";
+  if (/gh\s+repo\s+delete/i.test(c)) return "shell:gh-repo-delete";
+  if (/docker\s+push/i.test(c)) return "shell:docker-push";
+  if (/kubectl\s+apply/i.test(c)) return "shell:kubectl-apply";
+  if (/curl|wget|\bnc\b|Invoke-RestMethod|Invoke-WebRequest|api\.telegram\.org/i.test(c)) {
+    return "shell:network";
+  }
+  if (/\bssh\b|\bscp\b|\brsync\b/i.test(c)) return "shell:remote-copy";
+  if (/Remove-Item.*-Recurse|rm\s+-rf|del\s+\/s/i.test(c)) {
+    return "shell:destructive-delete";
+  }
+
+  // One-off / unknown — not reused for session-allow button
+  const bare = c
+    .replace(/("[^"]*"|'[^']*')/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 3)
+    .join(" ")
+    .slice(0, 80);
+  return `shell:${bare || "cmd"}`;
+}
+
+/** True when the middle "Allow for N" button will actually help next time. */
+export function isSessionAllowUseful(kind, detail, { toolName } = {}) {
+  const family = commandFamily(kind, detail, { toolName });
+  if (String(family).startsWith("mcp:")) return true;
+  return REUSABLE_SHELL_FAMILIES.has(family);
+}
+
+/** Session-allow key: family + project cwd (not full command body). */
+export function sessionFingerprint(kind, detail, { cwd, toolName } = {}) {
+  const family = commandFamily(kind, detail, { toolName });
+  return fingerprint(kind, `${family}\0${normalizeCwdKey(cwd)}`);
+}
+
 function readSessionAllow() {
   try {
     const j = JSON.parse(fs.readFileSync(SESSION_ALLOW_PATH, "utf8"));

@@ -90,7 +90,7 @@ Then:
 | `followup_wait_sec=forever` | Wait for Continue/text (capped by hook timeout ≈ 24d) |
 | `approve_shell` / `approve_mcp` | Telegram approve |
 | `approve_*_mode=sensitive` | Only risky commands (`all` = everything) |
-| `session_allow_min` | Session allow duration (button: days/hours/mins, zeros omitted) |
+| `session_allow_min` | “Allow for N” duration; button only for reusable kinds (`git push`, network, …) |
 | `locale` | `auto` (OS) · `ru` · `en` — bot UI language (also `TELEGRAM_LOCALE`) |
 
 **Important:** in `hooks.json`, `timeout` for stop/approve must be **≤ 2147000** (seconds). Larger values overflow int32 ms and kill the hook immediately.
