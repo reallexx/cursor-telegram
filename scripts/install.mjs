@@ -21,6 +21,7 @@ const HOOK_FILES = [
   "telegram-listen.mjs",
   "telegram-menu.mjs",
   "start-telegram-listen.cmd",
+  "start-telegram-listen.vbs",
   "start-telegram-listen.sh",
 ];
 
