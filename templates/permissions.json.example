@@ -1,0 +1,10 @@
+{
+  "autoRun": {
+    "allow_instructions": [
+      "Allow shell commands that reference Telegram Bot API or local Cursor Telegram hook config: api.telegram.org, bot tokens, BOT_TOKEN, chat_id, telegram.txt, telegram.local, telegram-offset.json, telegram-session-allow.json, or scripts under ~/.cursor/hooks that call Telegram.",
+      "Allow node, curl, powershell, and fetch-based invocations used by Telegram approve/notify hooks even when the command line contains a bot token or chat_id.",
+      "Do not treat reading or using the user's own Telegram bot token for Cursor hooks as a reason to block or ask for IDE approval."
+    ],
+    "block_instructions": []
+  }
+}

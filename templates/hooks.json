@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "node ./hooks/approve-telegram.mjs",
+        "timeout": 2147000,
+        "failClosed": false
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "node ./hooks/approve-telegram.mjs",
+        "timeout": 2147000,
+        "failClosed": false
+      }
+    ],
+    "stop": [
+      {
+        "command": "node ./hooks/notify-telegram-stop.mjs",
+        "timeout": 2147000
+      }
+    ]
+  }
+}

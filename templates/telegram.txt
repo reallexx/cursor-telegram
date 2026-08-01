@@ -1,0 +1,19 @@
+# Cursor → Telegram (non-secret settings)
+# Docs: see README.md / README.ru.md in the cursor-telegram repo
+# Secrets: ~/.cursor/telegram.local  or env TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
+
+# stop-notify: 1=on, 0=off
+notify_stop=1
+reply_wait_sec=0
+# forever = wait until hook timeout (~24d). Continue needs Cursor open.
+followup_wait_sec=forever
+# Cursor hook timeout max ~2147000 seconds (int32 ms). Larger kills stop instantly.
+
+# Shell / MCP approval
+approve_shell=1
+approve_shell_mode=sensitive
+approve_mcp=1
+approve_mcp_mode=sensitive
+approve_wait_sec=forever
+session_allow_min=10080
+early_ping=1

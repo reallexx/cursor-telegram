@@ -1,0 +1,24 @@
+# Secrets & runtime (never commit)
+telegram.local
+.env
+.env.*
+
+# Generated under ~/.cursor when installed — keep out of this repo if copied by mistake
+telegram.log
+telegram-hooks.log
+telegram-offset.json
+telegram-pending.json
+telegram-session-allow.json
+telegram-poll.lock
+telegram-poll-priority.json
+telegram-listen.pid
+telegram-control.json
+telegram-compose.json
+telegram-pending.lock
+
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
