@@ -2,6 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import {
+  resolveLocale,
+  detectOsLocale,
+  t,
+  formatWaitLabel,
+  formatDuration,
+  formatAllowForLabel,
+} from "./telegram-i18n.mjs";
+
+export {
+  resolveLocale,
+  detectOsLocale,
+  t,
+  formatWaitLabel,
+  formatDuration,
+  formatAllowForLabel,
+};
 
 export const CURSOR_DIR = path.join(os.homedir(), ".cursor");
 export const CONFIG_PATH = path.join(CURSOR_DIR, "telegram.txt");
@@ -15,9 +32,6 @@ export const LISTEN_PID_PATH = path.join(CURSOR_DIR, "telegram-listen.pid");
 export const LOG_PATH = path.join(CURSOR_DIR, "telegram.log");
 export const PENDING_PATH = path.join(CURSOR_DIR, "telegram-pending.json");
 export const PENDING_LOCK_PATH = path.join(CURSOR_DIR, "telegram-pending.lock");
-
-export const LATE_FOLLOWUP_TEXT =
-  "⌛ Поздно: Cursor закрыт или ожидание снято.\nContinue из бота уже нельзя — напиши в чат Cursor вручную.";
 
 function parseKeyValues(raw) {
   const cfg = {};
@@ -69,6 +83,7 @@ export function finalizeConfig(base) {
 
   const sam = Number(cfg.session_allow_min ?? "60");
   cfg.session_allow_min = Number.isFinite(sam) && sam > 0 ? sam : 60;
+  cfg.locale = resolveLocale(cfg.locale ?? process.env.TELEGRAM_LOCALE ?? "auto");
   return cfg;
 }
 
@@ -76,16 +91,9 @@ export function parseConfig(raw) {
   return finalizeConfig(parseKeyValues(raw));
 }
 
-export function formatWaitLabel(waitSec) {
-  if (!waitSec) return null;
-  if (!Number.isFinite(waitSec)) return "без лимита";
-  if (waitSec >= 3600) {
-    const h = waitSec / 3600;
-    const n = Number.isInteger(h) ? h : Number(h.toFixed(1));
-    return `${n} ч`;
-  }
-  if (waitSec >= 60) return `${Math.round(waitSec / 60)} мин`;
-  return `${waitSec} сек`;
+/** @deprecated use formatDuration(locale, minutes) */
+export function formatDurationRu(minutes) {
+  return formatDuration("ru", minutes);
 }
 
 export function loadConfig() {
@@ -355,15 +363,12 @@ export async function handleBotCommand(cfg, text) {
   if (!t.startsWith("/")) return false;
   const cmd = t.split(/\s+/)[0].toLowerCase().replace(/@[\w_]+$/, "");
 
+  const L = cfg.locale || "en";
   if (cmd === "/pause") {
     writeControl({ paused: true });
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
-      text:
-        "⏸ <b>Пауза</b>\n" +
-        "• Подтверждения → авто-разрешение\n" +
-        "• Уведомления о стопе → выкл\n" +
-        "Вернуть: /resume",
+      text: t(L, "pause_msg"),
       parse_mode: "HTML",
       disable_web_page_preview: true,
     });
@@ -373,7 +378,7 @@ export async function handleBotCommand(cfg, text) {
     writeControl({ paused: false });
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
-      text: "▶ <b>Снято с паузы</b>\nПодтверждения и уведомления снова активны.",
+      text: t(L, "resume_msg"),
       parse_mode: "HTML",
       disable_web_page_preview: true,
     });
@@ -382,30 +387,33 @@ export async function handleBotCommand(cfg, text) {
   if (cmd === "/status" || cmd === "/help" || cmd === "/start") {
     const ctrl = readControl();
     const onOff = (v) =>
-      ["1", "true", "on", "yes"].includes(String(v).toLowerCase()) ? "вкл" : "выкл";
-    const waitRu = (sec) => {
-      if (!sec) return "выкл";
-      if (!Number.isFinite(sec)) return "без лимита";
-      return formatWaitLabel(sec);
+      ["1", "true", "on", "yes"].includes(String(v).toLowerCase())
+        ? t(L, "on")
+        : t(L, "off");
+    const waitLabel = (sec) => {
+      if (!sec) return t(L, "off");
+      if (!Number.isFinite(sec)) return t(L, "no_limit");
+      return formatWaitLabel(L, sec);
     };
     const lines = [
-      "<b>Cursor ↔ Telegram</b>",
-      `Пауза: <b>${ctrl.paused ? "да" : "нет"}</b>`,
-      `Уведомления о стопе: ${onOff(cfg.notify_stop)}`,
+      t(L, "status_title"),
+      `${t(L, "status_paused")}: <b>${ctrl.paused ? t(L, "yes") : t(L, "no")}</b>`,
+      `${t(L, "status_notify")}: ${onOff(cfg.notify_stop)}`,
       `Approve shell: ${onOff(cfg.approve_shell)} (${cfg.approve_shell_mode})`,
       `Approve MCP: ${onOff(cfg.approve_mcp)} (${cfg.approve_mcp_mode})`,
-      `Ожидание Continue: ${waitRu(cfg.followup_wait_sec)}`,
-      `Ожидание approve: ${waitRu(cfg.approve_wait_sec)}`,
-      `Сессия Allow: ${cfg.session_allow_min} мин`,
+      `${t(L, "status_followup_wait")}: ${waitLabel(cfg.followup_wait_sec)}`,
+      `${t(L, "status_approve_wait")}: ${waitLabel(cfg.approve_wait_sec)}`,
+      `${t(L, "status_session")}: ${formatDuration(L, cfg.session_allow_min)}`,
       `Early ping: ${onOff(cfg.early_ping)}`,
-      `Лог: telegram.log`,
+      `${t(L, "status_locale")}: ${L}`,
+      t(L, "status_log"),
       "",
-      "<b>Команды</b>",
-      "/menu — скиллы, review, режимы",
-      "/status — этот статус",
-      "/pause — авто-allow + выкл notify",
-      "/resume — обычный режим",
-      "/help — то же, что /status",
+      t(L, "status_commands"),
+      t(L, "status_cmd_menu"),
+      t(L, "status_cmd_status"),
+      t(L, "status_cmd_pause"),
+      t(L, "status_cmd_resume"),
+      t(L, "status_cmd_help"),
     ];
     tlog(`command ${cmd} paused=${readControl().paused}`);
     await tg(cfg.token, "sendMessage", {
@@ -991,21 +999,24 @@ export async function waitForParkedFollowup(
   return pollOnce();
 }
 
-export function closedFollowupHtml(baseHtml) {
-  const cleaned = String(baseHtml || "").replace(/\n<i>⏱[\s\S]*$/m, "");
+export function closedFollowupHtml(baseHtml, locale = "en") {
+  const cleaned = String(baseHtml || "")
+    .replace(/\n<i>Нужен открытый Cursor[\s\S]*$/m, "")
+    .replace(/\n<i>Cursor must be open[\s\S]*$/m, "")
+    .replace(/\n<i>⏱[\s\S]*$/m, "");
   return (
-    `${cleaned}\n\n⌛ <b>Сессия закрыта</b>\n` +
-    `Continue работает только пока открыт Cursor и живёт ожидание хука.\n` +
-    `Сейчас уже поздно — напиши в чат Cursor вручную.`
+    `${cleaned}\n\n${t(locale, "session_closed_title")}\n` +
+    t(locale, "session_closed_body")
   );
 }
 
 export async function announceFollowupClosed(cfg, pending, { callbackQueryId } = {}) {
+  const L = cfg.locale || "en";
   if (callbackQueryId) {
     try {
       await tg(cfg.token, "answerCallbackQuery", {
         callback_query_id: callbackQueryId,
-        text: "Поздно — сессия закрыта",
+        text: t(L, "session_closed_tip"),
         show_alert: true,
       });
     } catch {
@@ -1018,7 +1029,7 @@ export async function announceFollowupClosed(cfg, pending, { callbackQueryId } =
         cfg.token,
         cfg.chat_id,
         pending.message_id,
-        closedFollowupHtml(pending.html)
+        closedFollowupHtml(pending.html, L)
       );
       return;
     } catch {
@@ -1028,7 +1039,7 @@ export async function announceFollowupClosed(cfg, pending, { callbackQueryId } =
   try {
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
-      text: LATE_FOLLOWUP_TEXT,
+      text: t(L, "late_followup"),
       disable_web_page_preview: true,
     });
   } catch {

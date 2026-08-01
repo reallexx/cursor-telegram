@@ -31,6 +31,7 @@ import {
   isPidAlive,
   touchPollLock,
   tlog,
+  t,
 } from "./telegram-lib.mjs";
 import {
   handleMenuCallback,
@@ -110,10 +111,11 @@ async function handleFollowupCallback(cfg, cb) {
   }
 
   parkFollowupClick(id, kind, cb.id);
+  const L = cfg.locale || "en";
   try {
     await tg(cfg.token, "answerCallbackQuery", {
       callback_query_id: cb.id,
-      text: kind === "done" ? "Готово" : "Напиши текст",
+      text: kind === "done" ? t(L, "tip_done") : t(L, "tip_write"),
     });
   } catch {
     // ignore
@@ -128,13 +130,14 @@ async function handleApproveCallback(cfg, cb) {
   const map = { a: "allow", s: "session", d: "deny" };
   const decision = map[m[1].toLowerCase()];
   const id = m[2];
+  const L = cfg.locale || "en";
 
   const parked = parkApproveDecisionIfWaiting(id, decision, cb.id);
   if (!parked?.ok) {
     try {
       await tg(cfg.token, "answerCallbackQuery", {
         callback_query_id: cb.id,
-        text: "Поздно — запрос уже закрыт",
+        text: t(L, "approve_late"),
         show_alert: true,
       });
     } catch {
@@ -146,10 +149,10 @@ async function handleApproveCallback(cfg, cb) {
 
   const tip =
     decision === "allow"
-      ? "Разрешено"
+      ? t(L, "approve_tip_allow")
       : decision === "session"
-        ? "На сессию"
-        : "Отклонено";
+        ? t(L, "approve_tip_session")
+        : t(L, "approve_tip_deny");
   try {
     await tg(cfg.token, "answerCallbackQuery", {
       callback_query_id: cb.id,
@@ -186,10 +189,7 @@ async function main() {
   try {
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
-      text:
-        "🎧 <b>Слушатель запущен</b>\n" +
-        "Команды: /menu /status /pause /resume /help\n" +
-        "<i>Reply на стоп → тот чат; без reply → последний. Approve-кнопки тоже здесь.</i>",
+      text: t(cfg.locale || "en", "listen_hello"),
       parse_mode: "HTML",
       disable_web_page_preview: true,
     });
@@ -302,9 +302,7 @@ async function main() {
               try {
                 await tg(cfg.token, "sendMessage", {
                   chat_id: cfg.chat_id,
-                  text:
-                    "⏳ Нет активного стопа — префикс из /menu сохранён.\n" +
-                    "Дождись стопа или reply на нужное сообщение / «Продолжить».",
+                  text: t(cfg.locale || "en", "compose_waiting"),
                   disable_web_page_preview: true,
                 });
               } catch {

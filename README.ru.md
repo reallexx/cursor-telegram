@@ -12,7 +12,11 @@ English: [README.md](./README.md)
   <img src="docs/menu.png" alt="Меню /menu" width="420" />
 </p>
 
-<p align="center"><sub>Стоп-уведомление · <code>/menu</code></sub></p>
+<p align="center">
+  <img src="docs/approve.png" alt="Подтверждение shell/MCP в Telegram" width="520" />
+</p>
+
+<p align="center"><sub>Стоп · <code>/menu</code> · Approve</sub></p>
 
 ## Возможности
 
@@ -76,7 +80,8 @@ PowerShell:
 | `followup_wait_sec=forever` | Ждать Continue/текст (лимит ≈ timeout хука ~24д) |
 | `approve_shell` / `approve_mcp` | Спрашивать в боте |
 | `approve_*_mode=sensitive` | Только «опасные» (`all` — всё) |
-| `session_allow_min` | «Разрешить на N мин» |
+| `session_allow_min` | Длительность сессии (кнопка: д/ч/мин, нули не показываются) |
+| `locale` | `auto` (ОС) · `ru` · `en` — язык бота (или env `TELEGRAM_LOCALE`) |
 
 В `hooks.json` у stop/approve **`timeout` ≤ 2147000** секунд. Больше → переполнение int32 → хук умирает сразу.
 

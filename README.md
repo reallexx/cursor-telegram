@@ -12,7 +12,11 @@
   <img src="docs/menu.png" alt="/menu skills and modes" width="420" />
 </p>
 
-<p align="center"><sub>Stop notify · <code>/menu</code></sub></p>
+<p align="center">
+  <img src="docs/approve.png" alt="Shell/MCP approve from Telegram" width="520" />
+</p>
+
+<p align="center"><sub>Stop notify · <code>/menu</code> · Approve</sub></p>
 
 ## Features
 
@@ -85,7 +89,8 @@ Then:
 | `followup_wait_sec=forever` | Wait for Continue/text (capped by hook timeout ≈ 24d) |
 | `approve_shell` / `approve_mcp` | Telegram approve |
 | `approve_*_mode=sensitive` | Only risky commands (`all` = everything) |
-| `session_allow_min` | “Allow for N minutes” |
+| `session_allow_min` | Session allow duration (button: days/hours/mins, zeros omitted) |
+| `locale` | `auto` (OS) · `ru` · `en` — bot UI language (also `TELEGRAM_LOCALE`) |
 
 **Important:** in `hooks.json`, `timeout` for stop/approve must be **≤ 2147000** (seconds). Larger values overflow int32 ms and kill the hook immediately.
 

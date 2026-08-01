@@ -2,6 +2,9 @@
 # Docs: see README.md / README.ru.md in the cursor-telegram repo
 # Secrets: ~/.cursor/telegram.local  or env TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
 
+# UI language: auto (OS locale) | ru | en  (or env TELEGRAM_LOCALE)
+locale=auto
+
 # stop-notify: 1=on, 0=off
 notify_stop=1
 reply_wait_sec=0

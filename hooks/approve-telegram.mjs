@@ -22,7 +22,6 @@ const {
   projectName,
   isSensitiveShell,
   isSensitiveMcp,
-  formatWaitLabel,
   escapeHtml,
   truncate,
   fingerprint,
@@ -34,6 +33,9 @@ const {
   parseHookPayload,
   upsertApprovePending,
   waitForParkedApprove,
+  formatDuration,
+  formatAllowForLabel,
+  t,
 } = await import("./telegram-lib.mjs");
 
 function out(obj) {
@@ -53,12 +55,12 @@ function parseDecisionText(text) {
   return null;
 }
 
-function resolveRequest(payload) {
+function resolveRequest(payload, locale) {
   // beforeShellExecution
   if (typeof payload.command === "string" && !payload.tool_name) {
     return {
       kind: "shell",
-      title: "Команда shell",
+      title: t(locale, "shell_title"),
       detail: payload.command,
       cwd: payload.cwd || "",
       fp: fingerprint("shell", payload.command),
@@ -86,35 +88,35 @@ function resolveRequest(payload) {
   };
 }
 
-function buildApproveHtml({ title, project, cwd, detail, waitLabel, sessionMin, earlyPing }) {
+function buildApproveHtml({ title, project, cwd, detail, earlyPing, locale }) {
+  const L = locale || "en";
   const lines = [
-    earlyPing
-      ? `👀 <b>Нужно подтверждение</b> · если в Cursor висит <b>Run/Skip</b> — нажми там`
-      : null,
+    earlyPing ? t(L, "early_ping") : null,
     `<b>🔐 ${escapeHtml(title)}</b>`,
-    `<b>Проект:</b> ${escapeHtml(project)}`,
+    `<b>${t(L, "project")}:</b> ${escapeHtml(project)}`,
   ].filter(Boolean);
-  if (cwd) lines.push(`<b>Папка:</b> <code>${escapeHtml(truncate(cwd, 180))}</code>`);
+  if (cwd) {
+    lines.push(
+      `<b>${t(L, "folder")}:</b> <code>${escapeHtml(truncate(cwd, 180))}</code>`
+    );
+  }
   lines.push("");
   lines.push(`<pre>${escapeHtml(truncate(detail, 2800))}</pre>`);
-  lines.push("");
-  lines.push(
-    `<i>Ожидание: ${escapeHtml(waitLabel || "без лимита")} · сессия: ${sessionMin} мин · ответ: да / сессия / нет</i>`
-  );
   return lines.join("\n");
 }
 
 
-function buildResultHtml(baseHtml, decision, sessionMin) {
+function buildResultHtml(baseHtml, decision, sessionMin, locale) {
+  const L = locale || "en";
   const stamp =
     decision === "allow"
-      ? "✅ <b>Разрешено</b> (один раз)"
+      ? t(L, "allowed_once")
       : decision === "session"
-        ? `✅ <b>Разрешено на ${sessionMin} мин</b>`
+        ? t(L, "allowed_for", { dur: formatDuration(L, sessionMin) })
         : decision === "deny"
-          ? "❌ <b>Отклонено</b>"
-          : "⌛ <b>Время вышло — отклонено</b>";
-  const cleaned = String(baseHtml).replace(/\n<i>Ожидание:[\s\S]*$/m, "");
+          ? t(L, "denied")
+          : t(L, "approve_timeout");
+  const cleaned = String(baseHtml).replace(/\n<i>[\s\S]*$/m, "");
   return `${cleaned}\n\n${stamp}`;
 }
 
@@ -122,12 +124,6 @@ async function main() {
   const { payload, rawLen, parseError } = parseHookPayload(rawInEarly);
   if (parseError && parseError !== "empty") {
     tlog(`approve parseError=${parseError} rawLen=${rawLen}`);
-  }
-
-  const req = resolveRequest(payload);
-  if (!req) {
-    out({ permission: "allow" });
-    return;
   }
 
   let cfg;
@@ -140,6 +136,13 @@ async function main() {
       user_message: "Telegram approve: missing token/chat_id",
       agent_message: "Blocked: Telegram approval config incomplete.",
     });
+    return;
+  }
+
+  const L = cfg.locale || "en";
+  const req = resolveRequest(payload, L);
+  if (!req) {
+    out({ permission: "allow" });
     return;
   }
 
@@ -177,15 +180,13 @@ async function main() {
 
   const id = shortId();
   const project = projectName(payload.workspace_roots, payload.transcript_path);
-  const waitLabel = formatWaitLabel(cfg.approve_wait_sec);
   const html = buildApproveHtml({
     title: req.title,
     project,
     cwd: req.cwd,
     detail: req.detail,
-    waitLabel,
-    sessionMin: cfg.session_allow_min,
     earlyPing: enabledFlag(cfg.early_ping),
+    locale: L,
   });
 
   upsertApprovePending({
@@ -206,9 +207,12 @@ async function main() {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "✅ Разрешить", callback_data: `a:${id}` },
-            { text: `⏱ ${cfg.session_allow_min} мин`, callback_data: `s:${id}` },
-            { text: "❌ Отклонить", callback_data: `d:${id}` },
+            { text: t(L, "allow"), callback_data: `a:${id}` },
+            {
+              text: formatAllowForLabel(L, cfg.session_allow_min),
+              callback_data: `s:${id}`,
+            },
+            { text: t(L, "deny"), callback_data: `d:${id}` },
           ],
         ],
       },
@@ -233,7 +237,7 @@ async function main() {
       cfg.token,
       cfg.chat_id,
       sent.message_id,
-      buildResultHtml(html, decision, cfg.session_allow_min)
+      buildResultHtml(html, decision, cfg.session_allow_min, L)
     );
   } catch {
     try {
@@ -258,8 +262,8 @@ async function main() {
     tlog(`approve deny kind=${req.kind}`);
     out({
       permission: "deny",
-      user_message: "Отклонено в Telegram",
-      agent_message: "Action was denied by the user via Telegram.",
+      user_message: t(L, "deny_user"),
+      agent_message: t(L, "deny_agent"),
     });
     return;
   }
@@ -267,8 +271,8 @@ async function main() {
   tlog(`approve timeout kind=${req.kind}`);
   out({
     permission: "deny",
-    user_message: "Время подтверждения в Telegram истекло",
-    agent_message: "Denied: no Telegram approval within the wait window.",
+    user_message: t(L, "timeout_user"),
+    agent_message: t(L, "timeout_agent"),
   });
 }
 

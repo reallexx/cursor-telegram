@@ -15,6 +15,7 @@ import {
   listFollowupPending,
   isPidAlive,
   parkFollowupText,
+  t,
 } from "./telegram-lib.mjs";
 
 const COMPOSE_PATH = path.join(CURSOR_DIR, "telegram-compose.json");
@@ -26,32 +27,15 @@ const PAGE_SIZE = 8;
 /** @type {{ user: any[], system: any[], review: any[], mode: any[] }} */
 let cache = { user: [], system: [], review: [], mode: [] };
 
-const MODES = [
-  {
-    id: "agent",
-    label: "Agent",
-    invoke:
-      "[Режим Agent] Работай в режиме Agent: можно исследовать и вносить правки по задаче.\n\n",
-  },
-  {
-    id: "ask",
-    label: "Ask",
-    invoke:
-      "[Режим Ask] Работай в режиме Ask: отвечай и исследуй, не меняй файлы и не запускай опасные команды без явной просьбы.\n\n",
-  },
-  {
-    id: "plan",
-    label: "Plan",
-    invoke:
-      "[Режим Plan] Работай в режиме Plan: сначала план и варианты, правки в код не вноси, пока не попросят явно.\n\n",
-  },
-  {
-    id: "debug",
-    label: "Debug",
-    invoke:
-      "[Режим Debug] Работай в режиме Debug: гипотезы → проверки → фикс по уликам, без лишнего рефакторинга.\n\n",
-  },
-];
+function modesFor(locale) {
+  const L = locale || "en";
+  return [
+    { id: "agent", label: "Agent", invoke: t(L, "mode_agent") },
+    { id: "ask", label: "Ask", invoke: t(L, "mode_ask") },
+    { id: "plan", label: "Plan", invoke: t(L, "mode_plan") },
+    { id: "debug", label: "Debug", invoke: t(L, "mode_debug") },
+  ];
+}
 
 const REVIEW_EXTRA = [
   { id: "review", label: "review (выбор)", invoke: "/review" },
@@ -127,7 +111,8 @@ function scanSkillDir(root, kind) {
   return out;
 }
 
-export function refreshMenuCache() {
+export function refreshMenuCache(locale = "en") {
+  const L = locale || "en";
   const user = scanSkillDir(USER_SKILLS, "user");
   const system = scanSkillDir(SYSTEM_SKILLS, "system");
   const reviewFromSys = system.filter((s) =>
@@ -138,10 +123,10 @@ export function refreshMenuCache() {
     ...REVIEW_EXTRA,
     ...reviewFromSys.filter((s) => !reviewIds.has(s.id)),
   ];
-  const mode = MODES.map((m) => ({
+  const mode = modesFor(L).map((m) => ({
     id: m.id,
     label: m.label,
-    desc: "режим агента (инструкция в промпте)",
+    desc: t(L, "menu_mode_desc"),
     invoke: m.invoke,
     kind: "mode",
   }));
@@ -209,23 +194,25 @@ export function applyComposeToText(text) {
   return out;
 }
 
-function rootKeyboard() {
+function rootKeyboard(locale) {
+  const L = locale || "en";
   return {
     inline_keyboard: [
       [
-        { text: "👤 Мои скиллы", callback_data: "m:cat:user" },
-        { text: "⚙️ Системные", callback_data: "m:cat:system" },
+        { text: t(L, "menu_btn_my"), callback_data: "m:cat:user" },
+        { text: t(L, "menu_btn_system"), callback_data: "m:cat:system" },
       ],
       [
-        { text: "🔎 Review", callback_data: "m:cat:review" },
-        { text: "🎛 Режимы", callback_data: "m:cat:mode" },
+        { text: t(L, "menu_btn_review"), callback_data: "m:cat:review" },
+        { text: t(L, "menu_btn_modes"), callback_data: "m:cat:mode" },
       ],
-      [{ text: "✖ Закрыть", callback_data: "m:close" }],
+      [{ text: t(L, "menu_btn_close"), callback_data: "m:close" }],
     ],
   };
 }
 
-function listKeyboard(kind, page) {
+function listKeyboard(kind, page, locale) {
+  const L = locale || "en";
   const items = itemsOf(kind);
   const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const p = Math.min(Math.max(0, page), pages - 1);
@@ -241,51 +228,55 @@ function listKeyboard(kind, page) {
   if (p < pages - 1) nav.push({ text: "▶", callback_data: `m:page:${kind}:${p + 1}` });
   rows.push(nav);
   rows.push([
-    { text: "⬅ Категории", callback_data: "m:root" },
+    { text: t(L, "menu_btn_cats"), callback_data: "m:root" },
     { text: "✖", callback_data: "m:close" },
   ]);
   return { inline_keyboard: rows };
 }
 
-function confirmKeyboard() {
+function confirmKeyboard(locale) {
+  const L = locale || "en";
   return {
     inline_keyboard: [
       [
-        { text: "📤 Отправить сейчас", callback_data: "m:go" },
-        { text: "🧹 Сбросить", callback_data: "m:clr" },
+        { text: t(L, "menu_btn_send"), callback_data: "m:go" },
+        { text: t(L, "menu_btn_clear"), callback_data: "m:clr" },
       ],
-      [{ text: "📋 Меню", callback_data: "m:root" }],
+      [{ text: t(L, "menu_btn_menu"), callback_data: "m:root" }],
     ],
   };
 }
 
-const KIND_TITLE = {
-  user: "Мои скиллы",
-  system: "Системные скиллы",
-  review: "Review",
-  mode: "Режимы",
-};
+function kindTitle(locale, kind) {
+  const map = {
+    user: "menu_kind_user",
+    system: "menu_kind_system",
+    review: "menu_kind_review",
+    mode: "menu_kind_mode",
+  };
+  return t(locale || "en", map[kind] || "menu_kind_user");
+}
 
 export async function sendMenuRoot(cfg) {
-  refreshMenuCache();
+  const L = cfg.locale || "en";
+  refreshMenuCache(L);
   const c = cache;
   const text = [
-    "📋 <b>Меню Cursor</b>",
+    t(L, "menu_title"),
     "",
-    `👤 Мои: <b>${c.user.length}</b>`,
-    `⚙️ Системные: <b>${c.system.length}</b>`,
+    `👤 ${t(L, "menu_my")}: <b>${c.user.length}</b>`,
+    `⚙️ ${t(L, "menu_system")}: <b>${c.system.length}</b>`,
     `🔎 Review: <b>${c.review.length}</b>`,
-    `🎛 Режимы: <b>${c.mode.length}</b>`,
+    `🎛 ${t(L, "menu_modes")}: <b>${c.mode.length}</b>`,
     "",
-    "<i>Выбор → префикс промпта. Допиши текст или «Отправить сейчас».",
-    "Без «Продолжить» уйдёт в последний стоп. Режим в IDE кнопкой не переключается — в промпт кладётся инструкция.</i>",
+    t(L, "menu_hint"),
   ].join("\n");
   await tg(cfg.token, "sendMessage", {
     chat_id: cfg.chat_id,
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: rootKeyboard(),
+    reply_markup: rootKeyboard(L),
   });
 }
 
@@ -326,6 +317,7 @@ function selectItem(kind, idx) {
 }
 
 async function afterPick(cfg, cb, item) {
+  const L = cfg.locale || "en";
   writeCompose({
     invoke: item.invoke,
     label: item.label,
@@ -333,16 +325,14 @@ async function afterPick(cfg, cb, item) {
   });
   const waiter = pickLatestWaiter();
   const lines = [
-    `✅ Выбрано: <b>${escapeHtml(item.label)}</b>`,
+    t(L, "menu_picked", { label: escapeHtml(item.label) }),
     `<code>${escapeHtml(String(item.invoke).trim().slice(0, 200))}</code>`,
     "",
-    waiter
-      ? "Есть активный стоп — допиши текст или жми «Отправить сейчас»."
-      : "Стоп-ожидания нет: префикс сохранён, уйдёт с следующим текстом, когда появится стоп (или после «Продолжить»).",
+    waiter ? t(L, "menu_pick_with_stop") : t(L, "menu_pick_no_stop"),
     "",
-    "<i>Следующее сообщение в боте добавится к этому выбору.</i>",
+    t(L, "menu_pick_next"),
   ];
-  await editOrAnswer(cfg, cb, lines.join("\n"), confirmKeyboard());
+  await editOrAnswer(cfg, cb, lines.join("\n"), confirmKeyboard(L));
   tlog(`menu pick ${item.kind || "?"}:${item.id}`);
 }
 
@@ -356,7 +346,8 @@ export async function handleMenuCallback(cfg, cb) {
   const data = String(cb.data || "");
   if (!data.startsWith("m:")) return false;
 
-  refreshMenuCache();
+  const L = cfg.locale || "en";
+  refreshMenuCache(L);
 
   if (data === "m:noop") {
     try {
@@ -368,7 +359,7 @@ export async function handleMenuCallback(cfg, cb) {
   }
 
   if (data === "m:close") {
-    await editOrAnswer(cfg, cb, "📋 Меню закрыто.", { inline_keyboard: [] });
+    await editOrAnswer(cfg, cb, t(L, "menu_closed"), { inline_keyboard: [] });
     return true;
   }
 
@@ -378,17 +369,17 @@ export async function handleMenuCallback(cfg, cb) {
       cfg,
       cb,
       [
-        "📋 <b>Меню Cursor</b>",
+        t(L, "menu_title"),
         `👤 ${c.user.length} · ⚙️ ${c.system.length} · 🔎 ${c.review.length} · 🎛 ${c.mode.length}`,
       ].join("\n"),
-      rootKeyboard()
+      rootKeyboard(L)
     );
     return true;
   }
 
   if (data === "m:clr") {
     writeCompose(null);
-    await editOrAnswer(cfg, cb, "🧹 Префикс сброшен.", rootKeyboard());
+    await editOrAnswer(cfg, cb, t(L, "menu_cleared"), rootKeyboard(L));
     return true;
   }
 
@@ -398,7 +389,7 @@ export async function handleMenuCallback(cfg, cb) {
       try {
         await tg(cfg.token, "answerCallbackQuery", {
           callback_query_id: cb.id,
-          text: "Нечего отправлять",
+          text: t(L, "menu_nothing"),
           show_alert: true,
         });
       } catch {
@@ -411,7 +402,7 @@ export async function handleMenuCallback(cfg, cb) {
       try {
         await tg(cfg.token, "answerCallbackQuery", {
           callback_query_id: cb.id,
-          text: "Нет активного стопа — дождись уведомления",
+          text: t(L, "menu_no_stop"),
           show_alert: true,
         });
       } catch {
@@ -425,7 +416,7 @@ export async function handleMenuCallback(cfg, cb) {
     await editOrAnswer(
       cfg,
       cb,
-      `📤 Отправлено в Cursor:\n<pre>${escapeHtml(payload.slice(0, 500))}</pre>`,
+      t(L, "menu_sent", { payload: escapeHtml(payload.slice(0, 500)) }),
       { inline_keyboard: [] }
     );
     return true;
@@ -438,8 +429,8 @@ export async function handleMenuCallback(cfg, cb) {
     await editOrAnswer(
       cfg,
       cb,
-      `📋 <b>${KIND_TITLE[kind]}</b> (${items.length})`,
-      listKeyboard(kind, 0)
+      `📋 <b>${kindTitle(L, kind)}</b> (${items.length})`,
+      listKeyboard(kind, 0, L)
     );
     return true;
   }
@@ -451,8 +442,8 @@ export async function handleMenuCallback(cfg, cb) {
     await editOrAnswer(
       cfg,
       cb,
-      `📋 <b>${KIND_TITLE[kind]}</b> (${itemsOf(kind).length})`,
-      listKeyboard(kind, page)
+      `📋 <b>${kindTitle(L, kind)}</b> (${itemsOf(kind).length})`,
+      listKeyboard(kind, page, L)
     );
     return true;
   }
@@ -466,7 +457,7 @@ export async function handleMenuCallback(cfg, cb) {
       try {
         await tg(cfg.token, "answerCallbackQuery", {
           callback_query_id: cb.id,
-          text: "Пункт устарел — открой /menu",
+          text: t(L, "menu_stale"),
           show_alert: true,
         });
       } catch {
@@ -483,12 +474,13 @@ export async function handleMenuCallback(cfg, cb) {
 }
 
 export async function syncTelegramBotCommands(cfg) {
+  const L = cfg.locale || "en";
   const commands = [
-    { command: "menu", description: "Скиллы, review, режимы" },
-    { command: "status", description: "Статус Cursor↔Telegram" },
-    { command: "pause", description: "Пауза approve/notify" },
-    { command: "resume", description: "Снять паузу" },
-    { command: "help", description: "Справка" },
+    { command: "menu", description: t(L, "cmd_menu") },
+    { command: "status", description: t(L, "cmd_status") },
+    { command: "pause", description: t(L, "cmd_pause") },
+    { command: "resume", description: t(L, "cmd_resume") },
+    { command: "help", description: t(L, "cmd_help") },
   ];
   try {
     await tg(cfg.token, "setMyCommands", { commands });

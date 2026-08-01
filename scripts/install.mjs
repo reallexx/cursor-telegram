@@ -16,6 +16,7 @@ const forceHooksJson = process.argv.includes("--force-hooks-json");
 
 const HOOK_FILES = [
   "telegram-lib.mjs",
+  "telegram-i18n.mjs",
   "notify-telegram-stop.mjs",
   "approve-telegram.mjs",
   "telegram-listen.mjs",

@@ -35,6 +35,7 @@ const {
   waitForParkedFollowup,
   tlog,
   parseHookPayload,
+  t,
 } = await import("./telegram-lib.mjs");
 
 function extractTextFromMessage(msg) {
@@ -97,30 +98,36 @@ function summarizeTranscript(transcriptPath) {
   return { summary, hasQuestions };
 }
 
-function statusRu(status) {
-  if (status === "completed") return "завершён";
-  if (status === "error") return "ошибка";
-  if (status === "aborted") return "прерван";
+function statusLabel(locale, status) {
+  if (status === "completed") return t(locale, "status_completed");
+  if (status === "error") return t(locale, "status_error");
+  if (status === "aborted") return t(locale, "status_aborted");
   return status;
 }
 
-function buildHtml({ status, project, model, summary, hasQuestions, waitSec }) {
-  const waitLabel = formatWaitLabel(waitSec);
-  const q = hasQuestions ? "да — похоже, ждёт тебя" : "нет / неясно";
+function buildHtml({
+  status,
+  project,
+  model,
+  summary,
+  hasQuestions,
+  waitSec,
+  locale,
+}) {
+  const L = locale || "en";
+  const waitLabel = formatWaitLabel(L, waitSec);
+  const q = hasQuestions ? t(L, "questions_yes") : t(L, "questions_no");
   const lines = [
-    `${statusEmoji(status)} <b>Агент: ${escapeHtml(statusRu(status))}</b>`,
-    `<b>Проект:</b> ${escapeHtml(project)}`,
-    `<b>Модель:</b> <code>${escapeHtml(model || "неизвестно")}</code>`,
-    `<b>Вопросы:</b> ${escapeHtml(q)}`,
+    `${statusEmoji(status)} <b>${t(L, "agent")}: ${escapeHtml(statusLabel(L, status))}</b>`,
+    `<b>${t(L, "project")}:</b> ${escapeHtml(project)}`,
+    `<b>${t(L, "model")}:</b> <code>${escapeHtml(model || t(L, "unknown"))}</code>`,
+    `<b>${t(L, "questions")}:</b> ${escapeHtml(q)}`,
     "",
-    "<b>Кратко</b>",
+    `<b>${t(L, "summary")}</b>`,
     `<pre>${escapeHtml(truncate(summary, MAX_SUMMARY))}</pre>`,
   ];
   if (waitLabel) {
-    lines.push(
-      "",
-      `<i>⏱ ${escapeHtml(waitLabel)}: «Продолжить» / reply на это сообщение → этот чат; без reply → последний стоп · нужен Cursor</i>`
-    );
+    lines.push("", `<i>${t(L, "stop_hint")}</i>`);
   }
   return lines.join("\n");
 }
@@ -197,6 +204,7 @@ async function main() {
 
   tlog(`notify send status=${status} project=${project} model=${model || "-"}`);
 
+  const L = cfg.locale || "en";
   const waitSec = resolveFollowupWait(cfg);
   const html = buildHtml({
     status,
@@ -205,6 +213,7 @@ async function main() {
     summary,
     hasQuestions,
     waitSec,
+    locale: L,
   });
 
   const id = shortId();
@@ -212,8 +221,8 @@ async function main() {
     ? {
         inline_keyboard: [
           [
-            { text: "✍️ Продолжить", callback_data: `c:${id}` },
-            { text: "✔ Готово", callback_data: `x:${id}` },
+            { text: t(L, "btn_continue"), callback_data: `c:${id}` },
+            { text: t(L, "btn_done"), callback_data: `x:${id}` },
           ],
         ],
       }
@@ -314,7 +323,7 @@ async function main() {
           cfg.token,
           cfg.chat_id,
           sent.message_id,
-          `${html}\n\n✔ <b>Готово</b>`
+          `${html}\n\n${t(L, "stamp_done")}`
         );
       } catch {
         // ignore
@@ -335,7 +344,7 @@ async function main() {
           cfg.token,
           cfg.chat_id,
           sent.message_id,
-          `${html}\n\n✍️ <b>Напиши следующий промпт</b>`
+          `${html}\n\n${t(L, "stamp_write_prompt")}`
         );
       } catch {
         // ignore
@@ -365,7 +374,7 @@ async function main() {
             cfg.token,
             cfg.chat_id,
             sent.message_id,
-            `${html}\n\n📨 <b>Промпт отправлен в Cursor</b>\n<pre>${escapeHtml(truncate(prompt, 500))}</pre>`
+            `${html}\n\n${t(L, "stamp_sent")}\n<pre>${escapeHtml(truncate(prompt, 500))}</pre>`
           );
         } catch {
           // ignore
@@ -386,7 +395,7 @@ async function main() {
           cfg.token,
           cfg.chat_id,
           sent.message_id,
-          `${html}\n\n📨 <b>Промпт отправлен в Cursor</b>\n<pre>${escapeHtml(truncate(value.text, 500))}</pre>`
+          `${html}\n\n${t(L, "stamp_sent")}\n<pre>${escapeHtml(truncate(value.text, 500))}</pre>`
         );
       } catch {
         // ignore
