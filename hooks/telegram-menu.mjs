@@ -139,7 +139,9 @@ function itemsOf(kind) {
 }
 
 function pickLatestWaiter() {
-  const waiters = listFollowupPending().filter(
+  const listed = listFollowupPending();
+  if (!Array.isArray(listed)) return null;
+  const waiters = listed.filter(
     (p) => p.status === "waiting" && isPidAlive(p.pid)
   );
   if (!waiters.length) return null;
@@ -183,7 +185,8 @@ export function peekComposedText(text) {
     return { text: inv + t, usedCompose: true };
   }
   if (!t) return { text: inv.trim(), usedCompose: true };
-  if (t.startsWith("/")) return { text: t, usedCompose: true };
+  // Typed bot-style command: send as-is, keep compose for a later Send/text.
+  if (t.startsWith("/")) return { text: t, usedCompose: false };
   return { text: `${inv.trim()}\n${t}`, usedCompose: true };
 }
 
@@ -280,11 +283,13 @@ export async function sendMenuRoot(cfg) {
   });
 }
 
-async function editOrAnswer(cfg, cb, text, reply_markup) {
-  try {
-    await tg(cfg.token, "answerCallbackQuery", { callback_query_id: cb.id });
-  } catch {
-    // ignore
+async function editOrAnswer(cfg, cb, text, reply_markup, { answered = false } = {}) {
+  if (!answered) {
+    try {
+      await tg(cfg.token, "answerCallbackQuery", { callback_query_id: cb.id });
+    } catch {
+      // ignore
+    }
   }
   const mid = cb.message?.message_id;
   if (mid) {
@@ -411,13 +416,34 @@ export async function handleMenuCallback(cfg, cb) {
       return true;
     }
     const payload = String(c.invoke).trim();
+    if (!parkFollowupText(waiter.id, payload)) {
+      try {
+        await tg(cfg.token, "answerCallbackQuery", {
+          callback_query_id: cb.id,
+          text: t(L, "tip_busy"),
+          show_alert: true,
+        });
+      } catch {
+        // ignore
+      }
+      return true;
+    }
     writeCompose(null);
-    parkFollowupText(waiter.id, payload);
+    // Do not mirror the full prompt here — stop-hook stamps it once on the agent message.
+    try {
+      await tg(cfg.token, "answerCallbackQuery", {
+        callback_query_id: cb.id,
+        text: t(L, "menu_queued_tip"),
+      });
+    } catch {
+      // ignore
+    }
     await editOrAnswer(
       cfg,
       cb,
-      t(L, "menu_sent", { payload: escapeHtml(payload.slice(0, 500)) }),
-      { inline_keyboard: [] }
+      t(L, "menu_queued"),
+      { inline_keyboard: [] },
+      { answered: true }
     );
     return true;
   }
@@ -478,6 +504,8 @@ export async function syncTelegramBotCommands(cfg) {
   const commands = [
     { command: "menu", description: t(L, "cmd_menu") },
     { command: "status", description: t(L, "cmd_status") },
+    { command: "away", description: t(L, "cmd_away") },
+    { command: "home", description: t(L, "cmd_home") },
     { command: "pause", description: t(L, "cmd_pause") },
     { command: "resume", description: t(L, "cmd_resume") },
     { command: "help", description: t(L, "cmd_help") },

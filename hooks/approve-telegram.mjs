@@ -31,6 +31,7 @@ const {
   grantSessionAllow,
   editMessageHtml,
   isPaused,
+  isAway,
   tlog,
   parseHookPayload,
   upsertApprovePending,
@@ -121,7 +122,12 @@ function buildResultHtml(baseHtml, decision, sessionMin, locale) {
         : decision === "deny"
           ? t(L, "denied")
           : t(L, "approve_timeout");
-  const cleaned = String(baseHtml).replace(/\n<i>[\s\S]*$/m, "");
+  let cleaned = String(baseHtml || "");
+  for (let i = 0; i < 4; i++) {
+    const next = cleaned.replace(/\n<i>[\s\S]*?<\/i>\s*$/u, "");
+    if (next === cleaned) break;
+    cleaned = next;
+  }
   return `${cleaned}\n\n${stamp}`;
 }
 
@@ -173,6 +179,13 @@ async function main() {
 
   if (isPaused()) {
     tlog(`approve paused → allow kind=${req.kind}`);
+    out({ permission: "allow" });
+    return;
+  }
+
+  // IDE-first: never block the agent while at the PC (/home). Gate only in /away.
+  if (!isAway()) {
+    tlog(`approve home → allow kind=${req.kind} (IDE-first, no Telegram wait)`);
     out({ permission: "allow" });
     return;
   }

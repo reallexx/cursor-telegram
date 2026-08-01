@@ -17,6 +17,7 @@ import {
   releaseListenSingleton,
   sweepClosedFollowups,
   getFollowupPending,
+  PENDING_BUSY,
   upsertFollowupPending,
   listFollowupPending,
   listApprovePending,
@@ -47,6 +48,8 @@ function sleep(ms) {
 }
 
 function pickLatestWaiting(list) {
+  if (list === PENDING_BUSY) return PENDING_BUSY;
+  if (!Array.isArray(list)) return null;
   const waiters = list.filter((p) => p.status === "waiting" && isPidAlive(p.pid));
   if (!waiters.length) return null;
   waiters.sort((a, b) =>
@@ -58,23 +61,26 @@ function pickLatestWaiting(list) {
 function pickFollowupForText(replyMessageId) {
   if (replyMessageId != null) {
     const byReply = findFollowupByMessageId(replyMessageId);
+    if (byReply === PENDING_BUSY) return PENDING_BUSY;
     if (byReply) return byReply;
   }
-  const waiters = listFollowupPending().filter(
+  // Prefer a chat that already tapped Continue; else latest waiting stop.
+  const listed = listFollowupPending();
+  if (listed === PENDING_BUSY) return PENDING_BUSY;
+  const waiters = listed.filter(
     (p) => p.status === "waiting" && isPidAlive(p.pid)
   );
   if (!waiters.length) return null;
   waiters.sort((a, b) =>
     String(b.updated_at || "").localeCompare(String(a.updated_at || ""))
   );
-  const needingText = waiters.filter((p) => p.awaiting_text);
-  if (needingText.length) return needingText[0];
-  return waiters[0];
+  return waiters.find((p) => p.awaiting_text) || waiters[0];
 }
 
 function pickApproveTarget(replyMessageId) {
   if (replyMessageId != null) {
     const byReply = findApproveByMessageId(replyMessageId);
+    if (byReply === PENDING_BUSY) return PENDING_BUSY;
     if (byReply) return byReply;
   }
   return pickLatestWaiting(listApprovePending());
@@ -86,7 +92,23 @@ async function handleFollowupCallback(cfg, cb) {
   if (!m) return false;
   const kind = m[1].toLowerCase() === "x" ? "done" : "continue";
   const id = m[2];
+  const L = cfg.locale || "en";
   const pending = getFollowupPending(id);
+
+  // Transient read failure — do NOT close the live wait; ask to tap again.
+  if (pending === PENDING_BUSY) {
+    try {
+      await tg(cfg.token, "answerCallbackQuery", {
+        callback_query_id: cb.id,
+        text: t(L, "tip_busy"),
+        show_alert: true,
+      });
+    } catch {
+      // ignore
+    }
+    tlog(`followup ${id} click busy (pending read)`);
+    return true;
+  }
 
   if (!pending || pending.status !== "waiting") {
     upsertFollowupPending({
@@ -110,8 +132,21 @@ async function handleFollowupCallback(cfg, cb) {
     return true;
   }
 
-  parkFollowupClick(id, kind, cb.id);
-  const L = cfg.locale || "en";
+  const parked = parkFollowupClick(id, kind, cb.id);
+  if (!parked) {
+    try {
+      await tg(cfg.token, "answerCallbackQuery", {
+        callback_query_id: cb.id,
+        text: t(L, "tip_busy"),
+        show_alert: true,
+      });
+    } catch {
+      // ignore
+    }
+    tlog(`followup ${id} park_click failed → no ack`);
+    return true;
+  }
+
   try {
     await tg(cfg.token, "answerCallbackQuery", {
       callback_query_id: cb.id,
@@ -134,10 +169,11 @@ async function handleApproveCallback(cfg, cb) {
 
   const parked = parkApproveDecisionIfWaiting(id, decision, cb.id);
   if (!parked?.ok) {
+    const busy = parked?.reason === "lock_timeout";
     try {
       await tg(cfg.token, "answerCallbackQuery", {
         callback_query_id: cb.id,
-        text: t(L, "approve_late"),
+        text: busy ? t(L, "tip_busy") : t(L, "approve_late"),
         show_alert: true,
       });
     } catch {
@@ -283,8 +319,28 @@ async function main() {
             const approveDecision = parseApproveDecisionText(text);
             if (approveDecision) {
               const ap = pickApproveTarget(replyMid);
+              if (ap === PENDING_BUSY) {
+                try {
+                  await tg(cfg.token, "sendMessage", {
+                    chat_id: cfg.chat_id,
+                    text: t(cfg.locale || "en", "tip_busy"),
+                  });
+                } catch {
+                  // ignore
+                }
+                continue;
+              }
               if (ap) {
-                parkApproveDecision(ap.id, approveDecision, null);
+                if (parkApproveDecision(ap.id, approveDecision, null)) continue;
+                tlog(`approve ${ap.id} text-park fail`);
+                try {
+                  await tg(cfg.token, "sendMessage", {
+                    chat_id: cfg.chat_id,
+                    text: t(cfg.locale || "en", "tip_busy"),
+                  });
+                } catch {
+                  // ignore
+                }
                 continue;
               }
               // no approve waiting — fall through as normal followup text
@@ -292,9 +348,31 @@ async function main() {
 
             const { text: composed, usedCompose } = peekComposedText(text);
             const target = pickFollowupForText(replyMid);
+            if (target === PENDING_BUSY) {
+              try {
+                await tg(cfg.token, "sendMessage", {
+                  chat_id: cfg.chat_id,
+                  text: t(cfg.locale || "en", "tip_busy"),
+                });
+              } catch {
+                // ignore
+              }
+              continue;
+            }
             if (target) {
+              if (!parkFollowupText(target.id, composed)) {
+                tlog(`followup ${target.id} text-park fail`);
+                try {
+                  await tg(cfg.token, "sendMessage", {
+                    chat_id: cfg.chat_id,
+                    text: t(cfg.locale || "en", "tip_busy"),
+                  });
+                } catch {
+                  // ignore
+                }
+                continue;
+              }
               if (usedCompose) writeCompose(null);
-              parkFollowupText(target.id, composed);
               tlog(
                 `parked text for ${target.id} len=${composed.length} compose=${usedCompose} reply=${replyMid || "-"}`
               );

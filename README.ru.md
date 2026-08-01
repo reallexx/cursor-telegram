@@ -4,20 +4,6 @@
 
 English: [README.md](./README.md)
 
-## Скриншоты
-
-<p align="center">
-  <img src="docs/stop-notify.png" alt="Стоп-уведомление с Продолжить / Готово" width="420" />
-  &nbsp;
-  <img src="docs/menu.png" alt="Меню /menu" width="420" />
-</p>
-
-<p align="center">
-  <img src="docs/approve.png" alt="Подтверждение shell/MCP в Telegram" width="520" />
-</p>
-
-<p align="center"><sub>Стоп · <code>/menu</code> · Approve</sub></p>
-
 ## Возможности
 
 - **Стоп-уведомление** — одно сообщение в Telegram после ответа агента (кратко + кнопки)
@@ -28,7 +14,8 @@ English: [README.md](./README.md)
 - **Listener** — единственный consumer `getUpdates` (без него кнопки не работают)
 
 > Это user-level **hooks** Cursor (`~/.cursor/hooks.json`), не Skills и не Cloud Agents.  
-> У Cursor **нет официального Telegram** — только API hooks. Этот репозиторий — один из способов управлять агентом с телефона.
+> У Cursor **нет официального Telegram** — только API hooks. Этот репозиторий — один из способов управлять агентом с телефона.  
+> **По умолчанию:** дома + тишина (`/pause`). С дивана — `/resume` (стоп в боте). Ушёл — `/away` (снимает тишину + approve в Telegram). Дома approve не блокирует IDE.
 
 ## Требования
 
@@ -61,7 +48,7 @@ PowerShell:
    - macOS/Linux: `~/.cursor/hooks/start-telegram-listen.sh`  
    Можно повесить на автозагрузку.
 4. **Перезапустить Cursor** → **Customize → Hooks**
-5. Короткий агент-чат → в Telegram приходит стоп с кнопками
+5. По умолчанию **тишина** — в боте `/resume` (с дивана) или `/away` (ушёл), затем короткий агент-чат → стоп с кнопками
 
 ## Команды бота
 
@@ -69,8 +56,10 @@ PowerShell:
 |---------|----------|
 | `/menu` | Скиллы, review, режимы |
 | `/status` | Статус |
-| `/pause` | Авто-allow + выкл notify |
-| `/resume` | Обычный режим |
+| `/away` | Ушёл — снять тишину + sensitive shell/MCP в Telegram |
+| `/home` | Дома — approve не блокирует IDE |
+| `/pause` | Тишина — выкл notify, авто-allow approve |
+| `/resume` | С дивана — стоп-уведомления и Continue в боте |
 | `/help` | Как status |
 
 ## Настройки (`~/.cursor/telegram.txt`)
@@ -99,8 +88,9 @@ PowerShell:
 
 - Кнопки молчат + Conflict в `telegram.log` → убить лишние `node …telegram-listen` / старые stop, оставить один listener
 - «Поздно / сессия закрыта» → Cursor или хук этого чата уже завершились
-- Тишина → Output → Hooks, проверить `telegram.local`
-- Approve не спрашивает → `/resume`, listener жив, `approve_*=1`
+- Бот молчит совсем → Output → Hooks, проверить `telegram.local`
+- Approve не спрашивает → нужен `/away` (дома/тишина не блокируют), listener жив, `approve_*=1`
+- Нет стоп-сообщений → сними тишину: `/resume` или `/away`
 - **В боте разрешил / тишина, а в Cursor висит Run** → два разных слоя. Хук не может убрать карточку Run/Skip в IDE (ограничение Cursor). Жми **Run** / **Always Run** или включи auto-run / allow-list у агента. После session-allow бот шлёт короткий пинг (`session_notify=1`), чтобы в чате не было пусто.
 
 ## Новые скиллы

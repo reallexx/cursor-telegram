@@ -265,11 +265,15 @@ export function readControl() {
   try {
     const j = JSON.parse(fs.readFileSync(CONTROL_PATH, "utf8"));
     return {
+      // Silence (pause): mute stop notify + auto-allow approve
       paused: !!j.paused,
+      // Away: explicit Telegram approve for sensitive shell/MCP
+      away: !!j.away,
       updated_at: j.updated_at || null,
     };
   } catch {
-    return { paused: false, updated_at: null };
+    // Default: home + silence
+    return { paused: true, away: false, updated_at: null };
   }
 }
 
@@ -286,6 +290,11 @@ export function writeControl(partial) {
 
 export function isPaused() {
   return readControl().paused;
+}
+
+/** When false (default), Telegram is notify-only and must not wait/block the IDE. */
+export function isAway() {
+  return readControl().away;
 }
 
 function readJsonSafe(file, fallback = null) {
@@ -433,13 +442,35 @@ export function releaseListenSingleton() {
   }
 }
 
-/** Handle /status /pause /resume /help. Returns true if consumed. */
+/** Handle /status /pause /resume /away /home /help. Returns true if consumed. */
 export async function handleBotCommand(cfg, text) {
-  const t = String(text || "").trim();
-  if (!t.startsWith("/")) return false;
-  const cmd = t.split(/\s+/)[0].toLowerCase().replace(/@[\w_]+$/, "");
+  const raw = String(text || "").trim();
+  if (!raw.startsWith("/")) return false;
+  const cmd = raw.split(/\s+/)[0].toLowerCase().replace(/@[\w_]+$/, "");
 
   const L = cfg.locale || "en";
+  if (cmd === "/away") {
+    // Leave home: unmute + explicit Telegram approve
+    writeControl({ away: true, paused: false });
+    await tg(cfg.token, "sendMessage", {
+      chat_id: cfg.chat_id,
+      text: t(L, "away_msg"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+    return true;
+  }
+  if (cmd === "/home" || cmd === "/ide") {
+    // Back at PC: approve no longer gates (silence unchanged)
+    writeControl({ away: false });
+    await tg(cfg.token, "sendMessage", {
+      chat_id: cfg.chat_id,
+      text: t(L, "home_msg"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+    return true;
+  }
   if (cmd === "/pause") {
     writeControl({ paused: true });
     await tg(cfg.token, "sendMessage", {
@@ -451,10 +482,11 @@ export async function handleBotCommand(cfg, text) {
     return true;
   }
   if (cmd === "/resume") {
-    writeControl({ paused: false });
+    // Leave silence: stop notifies + Continue (home or away unchanged)
+    const ctrl = writeControl({ paused: false });
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
-      text: t(L, "resume_msg"),
+      text: ctrl.away ? t(L, "resume_msg_away") : t(L, "resume_msg"),
       parse_mode: "HTML",
       disable_web_page_preview: true,
     });
@@ -473,12 +505,23 @@ export async function handleBotCommand(cfg, text) {
     };
     const lines = [
       t(L, "status_title"),
-      `${t(L, "status_paused")}: <b>${ctrl.paused ? t(L, "yes") : t(L, "no")}</b>`,
-      `${t(L, "status_notify")}: ${onOff(cfg.notify_stop)}`,
+      `${t(L, "status_mode")}: <b>${ctrl.away ? t(L, "mode_away") : t(L, "mode_home")}</b>`,
+      `${t(L, "status_silence")}: <b>${ctrl.paused ? t(L, "yes") : t(L, "no")}</b>`,
+      `${t(L, "status_notify")}: ${
+        ctrl.paused ? t(L, "off") : onOff(cfg.notify_stop)
+      }`,
       `Approve shell: ${onOff(cfg.approve_shell)} (${cfg.approve_shell_mode})`,
       `Approve MCP: ${onOff(cfg.approve_mcp)} (${cfg.approve_mcp_mode})`,
-      `${t(L, "status_followup_wait")}: ${waitLabel(cfg.followup_wait_sec)}`,
-      `${t(L, "status_approve_wait")}: ${waitLabel(cfg.approve_wait_sec)}`,
+      `${t(L, "status_followup_wait")}: ${
+        ctrl.paused ? t(L, "off") : waitLabel(cfg.followup_wait_sec)
+      }`,
+      `${t(L, "status_approve_wait")}: ${
+        ctrl.paused
+          ? t(L, "off")
+          : ctrl.away
+            ? waitLabel(cfg.approve_wait_sec)
+            : t(L, "wait_home_off")
+      }`,
       `${t(L, "status_session")}: ${formatDuration(L, cfg.session_allow_min)}`,
       `Early ping: ${onOff(cfg.early_ping)}`,
       `${t(L, "status_locale")}: ${L}`,
@@ -487,11 +530,13 @@ export async function handleBotCommand(cfg, text) {
       t(L, "status_commands"),
       t(L, "status_cmd_menu"),
       t(L, "status_cmd_status"),
-      t(L, "status_cmd_pause"),
       t(L, "status_cmd_resume"),
+      t(L, "status_cmd_pause"),
+      t(L, "status_cmd_away"),
+      t(L, "status_cmd_home"),
       t(L, "status_cmd_help"),
     ];
-    tlog(`command ${cmd} paused=${readControl().paused}`);
+    tlog(`command ${cmd} away=${ctrl.away} paused=${ctrl.paused}`);
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
       text: lines.join("\n"),
@@ -766,36 +811,108 @@ export function isPidAlive(pid) {
   }
 }
 
-function readPendingStore() {
-  try {
-    const j = JSON.parse(fs.readFileSync(PENDING_PATH, "utf8"));
-    j.followups = j.followups || {};
-    j.approves = j.approves || {};
-    return j;
-  } catch {
-    return { followups: {}, approves: {} };
-  }
-}
-
-function writePendingStore(store) {
-  fs.writeFileSync(
-    PENDING_PATH,
-    JSON.stringify({ ...store, updated_at: new Date().toISOString() }, null, 2),
-    "utf8"
-  );
-}
+/** Sentinel: pending.json temporarily unreadable (do not treat as missing). */
+export const PENDING_BUSY = Symbol("pending_busy");
 
 function sleepSync(ms) {
-  const end = Date.now() + ms;
+  const end = Date.now() + Math.max(0, ms);
   while (Date.now() < end) {
     /* spin */
   }
 }
 
+/**
+ * Read pending store.
+ * ENOENT / empty → empty maps.
+ * Corrupt / IO → throw (never pretend empty on write path).
+ */
+function readPendingStore() {
+  let raw;
+  try {
+    raw = fs.readFileSync(PENDING_PATH, "utf8");
+  } catch (err) {
+    if (err && err.code === "ENOENT") {
+      // Replace/lock in progress — do not pretend the store is empty
+      try {
+        fs.statSync(PENDING_LOCK_PATH);
+        const busy = new Error("pending busy");
+        busy.code = "PENDING_BUSY";
+        throw busy;
+      } catch (inner) {
+        if (inner && inner.code === "PENDING_BUSY") throw inner;
+      }
+      return { followups: {}, approves: {} };
+    }
+    throw err;
+  }
+  if (!String(raw).trim()) {
+    try {
+      fs.statSync(PENDING_LOCK_PATH);
+      const busy = new Error("pending busy");
+      busy.code = "PENDING_BUSY";
+      throw busy;
+    } catch (inner) {
+      if (inner && inner.code === "PENDING_BUSY") throw inner;
+    }
+    return { followups: {}, approves: {} };
+  }
+  const j = JSON.parse(raw);
+  return {
+    followups: j.followups || {},
+    approves: j.approves || {},
+    updated_at: j.updated_at || null,
+  };
+}
+
+/** Write via temp file. POSIX: atomic rename. Windows: copy over (no ENOENT gap). */
+function writePendingStore(store) {
+  const payload = JSON.stringify(
+    { ...store, updated_at: new Date().toISOString() },
+    null,
+    2
+  );
+  const tmp = `${PENDING_PATH}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, payload, "utf8");
+  try {
+    const fd = fs.openSync(tmp, "r+");
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    // fsync best-effort
+  }
+  if (process.platform === "win32") {
+    // rename-over fails on Windows; copy keeps destination present for readers
+    fs.copyFileSync(tmp, PENDING_PATH);
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      // ignore
+    }
+    return;
+  }
+  fs.renameSync(tmp, PENDING_PATH);
+}
+
+function readPendingStoreRetry(attempts = 6) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return { ok: true, store: readPendingStore() };
+    } catch (err) {
+      lastErr = err;
+      sleepSync(12 + i * 8);
+    }
+  }
+  return { ok: false, err: lastErr };
+}
+
 /** Exclusive lock around pending.json read-modify-write (multi-process safe-ish). */
 export function withPendingLock(fn) {
   const started = Date.now();
-  while (Date.now() - started < 8000) {
+  while (Date.now() - started < 5000) {
     try {
       const fd = fs.openSync(PENDING_LOCK_PATH, "wx");
       try {
@@ -815,7 +932,7 @@ export function withPendingLock(fn) {
     } catch {
       try {
         const st = fs.statSync(PENDING_LOCK_PATH);
-        if (Date.now() - st.mtimeMs > 15000) {
+        if (Date.now() - st.mtimeMs > 8000) {
           try {
             fs.unlinkSync(PENDING_LOCK_PATH);
           } catch {
@@ -828,83 +945,130 @@ export function withPendingLock(fn) {
       sleepSync(15);
     }
   }
-  tlog("pending lock timeout — proceeding unlocked");
-  return fn();
+  tlog("pending lock timeout — skip write");
+  throw new Error("pending lock timeout");
 }
 
+function prunePendingStore(store) {
+  const now = Date.now();
+  const maxAgeMs = 48 * 3600 * 1000;
+  for (const key of ["followups", "approves"]) {
+    const map = store[key] || {};
+    const kept = {};
+    const finished = [];
+    for (const [id, p] of Object.entries(map)) {
+      if (!p || typeof p !== "object") continue;
+      if (p.status === "waiting") {
+        kept[id] = p;
+        continue;
+      }
+      const ts = Date.parse(p.updated_at || 0);
+      if (Number.isFinite(ts) && now - ts < maxAgeMs) finished.push([id, p, ts]);
+    }
+    finished.sort((a, b) => b[2] - a[2]);
+    for (const [id, p] of finished.slice(0, 80)) kept[id] = p;
+    store[key] = kept;
+  }
+}
+
+/**
+ * Hot-path read (no lock). Retries on corrupt/partial JSON.
+ * Returns entry | null | PENDING_BUSY.
+ */
 export function getFollowupPending(id) {
-  return withPendingLock(() => readPendingStore().followups?.[id] || null);
+  const r = readPendingStoreRetry();
+  if (!r.ok) return PENDING_BUSY;
+  return r.store.followups?.[id] || null;
 }
 
 export function upsertFollowupPending(entry) {
-  return withPendingLock(() => {
-    const store = readPendingStore();
-    store.followups = store.followups || {};
-    store.followups[entry.id] = {
-      ...store.followups[entry.id],
-      ...entry,
-      updated_at: new Date().toISOString(),
-    };
-    writePendingStore(store);
-    return store.followups[entry.id];
-  });
+  try {
+    return withPendingLock(() => {
+      const store = readPendingStore();
+      store.followups = store.followups || {};
+      store.followups[entry.id] = {
+        ...store.followups[entry.id],
+        ...entry,
+        updated_at: new Date().toISOString(),
+      };
+      prunePendingStore(store);
+      writePendingStore(store);
+      return store.followups[entry.id];
+    });
+  } catch (err) {
+    tlog(`upsertFollowupPending fail: ${err.message}`);
+    return null;
+  }
 }
 
+/** @returns {object[] | typeof PENDING_BUSY} */
 export function listFollowupPending() {
-  return withPendingLock(() => Object.values(readPendingStore().followups || {}));
+  const r = readPendingStoreRetry();
+  if (!r.ok) return PENDING_BUSY;
+  return Object.values(r.store.followups || {});
 }
 
+/** @returns {object | null | typeof PENDING_BUSY} */
 export function findFollowupByMessageId(messageId) {
   const mid = Number(messageId);
   if (!Number.isFinite(mid)) return null;
+  const list = listFollowupPending();
+  if (list === PENDING_BUSY) return PENDING_BUSY;
   return (
-    listFollowupPending().find(
+    list.find(
       (p) => p.status === "waiting" && Number(p.message_id) === mid && isPidAlive(p.pid)
     ) || null
   );
 }
 
 export function upsertApprovePending(entry) {
-  return withPendingLock(() => {
-    const store = readPendingStore();
-    store.approves = store.approves || {};
-    store.approves[entry.id] = {
-      ...store.approves[entry.id],
-      ...entry,
-      updated_at: new Date().toISOString(),
-    };
-    writePendingStore(store);
-    return store.approves[entry.id];
-  });
+  try {
+    return withPendingLock(() => {
+      const store = readPendingStore();
+      store.approves = store.approves || {};
+      store.approves[entry.id] = {
+        ...store.approves[entry.id],
+        ...entry,
+        updated_at: new Date().toISOString(),
+      };
+      prunePendingStore(store);
+      writePendingStore(store);
+      return store.approves[entry.id];
+    });
+  } catch (err) {
+    tlog(`upsertApprovePending fail: ${err.message}`);
+    return null;
+  }
 }
 
 export function getApprovePending(id) {
-  return withPendingLock(() => readPendingStore().approves?.[id] || null);
+  const r = readPendingStoreRetry();
+  if (!r.ok) return PENDING_BUSY;
+  return r.store.approves?.[id] || null;
 }
 
+/** @returns {object[] | typeof PENDING_BUSY} */
 export function listApprovePending() {
-  return withPendingLock(() => Object.values(readPendingStore().approves || {}));
+  const r = readPendingStoreRetry();
+  if (!r.ok) return PENDING_BUSY;
+  return Object.values(r.store.approves || {});
 }
 
+/** @returns {object | null | typeof PENDING_BUSY} */
 export function findApproveByMessageId(messageId) {
   const mid = Number(messageId);
   if (!Number.isFinite(mid)) return null;
+  const list = listApprovePending();
+  if (list === PENDING_BUSY) return PENDING_BUSY;
   return (
-    listApprovePending().find(
+    list.find(
       (p) => p.status === "waiting" && Number(p.message_id) === mid && isPidAlive(p.pid)
     ) || null
   );
 }
 
 export function parkApproveDecision(id, decision, callbackQueryId) {
-  if (!id || !["allow", "session", "deny"].includes(decision)) return false;
-  upsertApprovePending({
-    id,
-    parked_decision: decision,
-    parked_callback_query_id: callbackQueryId || null,
-  });
-  tlog(`approve ${id} parked_decision=${decision}`);
-  return true;
+  return parkApproveDecisionIfWaiting(id, decision, callbackQueryId).ok;
 }
 
 /** Atomic: park only if approve still waiting and pid alive. */
@@ -912,41 +1076,49 @@ export function parkApproveDecisionIfWaiting(id, decision, callbackQueryId) {
   if (!id || !["allow", "session", "deny"].includes(decision)) {
     return { ok: false, reason: "bad_args" };
   }
-  return withPendingLock(() => {
-    const store = readPendingStore();
-    const p = store.approves?.[id];
-    if (!p || p.status !== "waiting") return { ok: false, reason: "not_waiting" };
-    if (!isPidAlive(p.pid)) return { ok: false, reason: "dead" };
-    store.approves[id] = {
-      ...p,
-      parked_decision: decision,
-      parked_callback_query_id: callbackQueryId || null,
-      updated_at: new Date().toISOString(),
-    };
-    writePendingStore(store);
-    tlog(`approve ${id} parked_decision=${decision} (atomic)`);
-    return { ok: true };
-  });
+  try {
+    return withPendingLock(() => {
+      const store = readPendingStore();
+      const p = store.approves?.[id];
+      if (!p || p.status !== "waiting") return { ok: false, reason: "not_waiting" };
+      if (!isPidAlive(p.pid)) return { ok: false, reason: "dead" };
+      store.approves[id] = {
+        ...p,
+        parked_decision: decision,
+        parked_callback_query_id: callbackQueryId || null,
+        updated_at: new Date().toISOString(),
+      };
+      writePendingStore(store);
+      tlog(`approve ${id} parked_decision=${decision} (atomic)`);
+      return { ok: true };
+    });
+  } catch {
+    return { ok: false, reason: "lock_timeout" };
+  }
 }
 
 export function takeParkedApproveDecision(id) {
-  return withPendingLock(() => {
-    const store = readPendingStore();
-    const p = store.approves?.[id];
-    if (!p?.parked_decision) return null;
-    const value = {
-      decision: p.parked_decision,
-      callback_query_id: p.parked_callback_query_id || null,
-    };
-    store.approves[id] = {
-      ...p,
-      parked_decision: null,
-      parked_callback_query_id: null,
-      updated_at: new Date().toISOString(),
-    };
-    writePendingStore(store);
-    return value;
-  });
+  try {
+    return withPendingLock(() => {
+      const store = readPendingStore();
+      const p = store.approves?.[id];
+      if (!p?.parked_decision) return null;
+      const value = {
+        decision: p.parked_decision,
+        callback_query_id: p.parked_callback_query_id || null,
+      };
+      store.approves[id] = {
+        ...p,
+        parked_decision: null,
+        parked_callback_query_id: null,
+        updated_at: new Date().toISOString(),
+      };
+      writePendingStore(store);
+      return value;
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function waitForParkedApprove(id, waitSec, { deadlineMs = null } = {}) {
@@ -956,7 +1128,9 @@ export async function waitForParkedApprove(id, waitSec, { deadlineMs = null } = 
     deadlineMs != null ? deadlineMs : forever ? Infinity : Date.now() + waitSec * 1000;
 
   const pollOnce = () => {
-    const st = getApprovePending(id)?.status;
+    const cur = getApprovePending(id);
+    if (cur === PENDING_BUSY) return null;
+    const st = cur?.status;
     if (st && st !== "waiting") return { closed: true, status: st };
     const parked = takeParkedApproveDecision(id);
     if (parked) return { value: parked };
@@ -980,61 +1154,118 @@ export function parseApproveDecisionText(text) {
   return null;
 }
 
-/** Park Continue/Done click for another stop-hook (multi-chat getUpdates race). */
+/**
+ * Park Continue/Done under lock only if still waiting.
+ * @returns {boolean}
+ */
 export function parkFollowupClick(id, kind, callbackQueryId) {
-  if (!id || (kind !== "done" && kind !== "continue")) return;
-  // Set awaiting_text immediately on Continue so free-text routes here before stop-hook wakes
-  upsertFollowupPending({
-    id,
-    parked_click: kind,
-    parked_callback_query_id: callbackQueryId || null,
-    awaiting_text: kind === "continue",
-  });
-  tlog(`followup ${id} parked_click=${kind}${kind === "continue" ? " awaiting_text=1" : ""}`);
+  if (!id || (kind !== "done" && kind !== "continue")) return false;
+  try {
+    const ok = withPendingLock(() => {
+      const store = readPendingStore();
+      const p = store.followups?.[id];
+      if (!p || p.status !== "waiting") return false;
+      if (!isPidAlive(p.pid)) return false;
+      store.followups[id] = {
+        ...p,
+        parked_click: kind,
+        parked_callback_query_id: callbackQueryId || null,
+        // Continue: prefer this chat for free-text before stop-hook wakes
+        awaiting_text: kind === "continue" ? true : !!p.awaiting_text,
+        updated_at: new Date().toISOString(),
+      };
+      prunePendingStore(store);
+      writePendingStore(store);
+      return true;
+    });
+    if (ok) {
+      tlog(
+        `followup ${id} parked_click=${kind}${kind === "continue" ? " awaiting_text=1" : ""}`
+      );
+    } else {
+      tlog(`followup ${id} park_click rejected (not waiting)`);
+    }
+    return !!ok;
+  } catch (err) {
+    tlog(`followup ${id} park_click fail: ${err.message}`);
+    return false;
+  }
 }
 
 export function takeParkedFollowupClick(id) {
-  return withPendingLock(() => {
-    const store = readPendingStore();
-    const p = store.followups?.[id];
-    if (!p?.parked_click) return null;
-    const value = {
-      kind: p.parked_click,
-      callback_query_id: p.parked_callback_query_id || null,
-    };
-    store.followups[id] = {
-      ...p,
-      parked_click: null,
-      parked_callback_query_id: null,
-      updated_at: new Date().toISOString(),
-    };
-    writePendingStore(store);
-    return value;
-  });
+  try {
+    return withPendingLock(() => {
+      const store = readPendingStore();
+      const p = store.followups?.[id];
+      if (!p?.parked_click) return null;
+      const value = {
+        kind: p.parked_click,
+        callback_query_id: p.parked_callback_query_id || null,
+      };
+      store.followups[id] = {
+        ...p,
+        parked_click: null,
+        parked_callback_query_id: null,
+        updated_at: new Date().toISOString(),
+      };
+      writePendingStore(store);
+      return value;
+    });
+  } catch {
+    return null;
+  }
 }
 
+/**
+ * Park free-text under lock only if still waiting and pid alive.
+ * @returns {boolean}
+ */
 export function parkFollowupText(id, text) {
-  const t = String(text || "").trim();
-  if (!id || !t) return;
-  upsertFollowupPending({ id, parked_text: t });
-  tlog(`followup ${id} parked_text len=${t.length}`);
+  const body = String(text || "").trim();
+  if (!id || !body) return false;
+  try {
+    const ok = withPendingLock(() => {
+      const store = readPendingStore();
+      const p = store.followups?.[id];
+      if (!p || p.status !== "waiting") return false;
+      if (!isPidAlive(p.pid)) return false;
+      store.followups[id] = {
+        ...p,
+        parked_text: body,
+        updated_at: new Date().toISOString(),
+      };
+      prunePendingStore(store);
+      writePendingStore(store);
+      return true;
+    });
+    if (ok) tlog(`followup ${id} parked_text len=${body.length}`);
+    else tlog(`followup ${id} park_text rejected (not waiting)`);
+    return !!ok;
+  } catch (err) {
+    tlog(`followup ${id} park_text fail: ${err.message}`);
+    return false;
+  }
 }
 
 export function takeParkedFollowupText(id) {
-  return withPendingLock(() => {
-    const store = readPendingStore();
-    const p = store.followups?.[id];
-    const t = p?.parked_text;
-    if (!t) return null;
-    store.followups[id] = {
-      ...p,
-      parked_text: null,
-      awaiting_text: false,
-      updated_at: new Date().toISOString(),
-    };
-    writePendingStore(store);
-    return String(t);
-  });
+  try {
+    return withPendingLock(() => {
+      const store = readPendingStore();
+      const p = store.followups?.[id];
+      const t = p?.parked_text;
+      if (!t) return null;
+      store.followups[id] = {
+        ...p,
+        parked_text: null,
+        awaiting_text: false,
+        updated_at: new Date().toISOString(),
+      };
+      writePendingStore(store);
+      return String(t);
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1053,7 +1284,9 @@ export async function waitForParkedFollowup(
     deadlineMs != null ? deadlineMs : forever ? Infinity : Date.now() + waitSec * 1000;
 
   const pollOnce = () => {
-    const st = getFollowupPending(id)?.status;
+    const cur = getFollowupPending(id);
+    if (cur === PENDING_BUSY) return null;
+    const st = cur?.status;
     if (st && st !== "waiting") return { closed: true, status: st };
 
     const click = takeParkedFollowupClick(id);
@@ -1076,10 +1309,13 @@ export async function waitForParkedFollowup(
 }
 
 export function closedFollowupHtml(baseHtml, locale = "en") {
-  const cleaned = String(baseHtml || "")
-    .replace(/\n<i>Нужен открытый Cursor[\s\S]*$/m, "")
-    .replace(/\n<i>Cursor must be open[\s\S]*$/m, "")
-    .replace(/\n<i>⏱[\s\S]*$/m, "");
+  let cleaned = String(baseHtml || "");
+  // Strip only trailing italic hint blocks (not the whole message from first <i>)
+  for (let i = 0; i < 4; i++) {
+    const next = cleaned.replace(/\n<i>[\s\S]*?<\/i>\s*$/u, "");
+    if (next === cleaned) break;
+    cleaned = next;
+  }
   return (
     `${cleaned}\n\n${t(locale, "session_closed_title")}\n` +
     t(locale, "session_closed_body")
@@ -1126,6 +1362,7 @@ export async function announceFollowupClosed(cfg, pending, { callbackQueryId } =
 /** Mark dead hook waits as closed and update Telegram. */
 export async function sweepClosedFollowups(cfg) {
   const items = listFollowupPending();
+  if (items === PENDING_BUSY) return;
   for (const p of items) {
     if (p.status !== "waiting") continue;
     if (isPidAlive(p.pid)) continue;

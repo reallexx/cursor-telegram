@@ -51,7 +51,8 @@ const STRINGS = {
     questions_yes: "да — похоже, ждёт тебя",
     questions_no: "нет / неясно",
     summary: "Кратко",
-    stop_hint: "Нужен открытый Cursor · reply → этот чат",
+    stop_hint:
+      "Продолжить / reply → этот чат Cursor · просто текст → последний стоп · нужен открытый Cursor",
     btn_continue: "✍️ Продолжить",
     btn_done: "✔ Готово",
     stamp_done: "✔ <b>Готово</b>",
@@ -67,11 +68,24 @@ const STRINGS = {
       "⌛ Поздно: Cursor закрыт или ожидание снято.\nContinue из бота уже нельзя — напиши в чат Cursor вручную.",
 
     pause_msg:
-      "⏸ <b>Пауза</b>\n• Подтверждения → авто-разрешение\n• Уведомления о стопе → выкл\nВернуть: /resume",
+      "🔇 <b>Тишина</b>\n• Уведомления о стопе → выкл\n• Approve → авто-разрешение\nС дивана: /resume · Ушёл из дома: /away",
     resume_msg:
-      "▶ <b>Снято с паузы</b>\nПодтверждения и уведомления снова активны.",
+      "▶ <b>С дивана</b>\nСтоп-уведомления и «Продолжить» снова в боте.\nApprove у ПК не блокирует (/home). Ушёл: /away",
+    resume_msg_away:
+      "▶ <b>Тишина снята</b> (режим «отошёл»)\nСтоп в боте · sensitive shell/MCP по-прежнему спрашиваются.\nДомой: /home · Тишина: /pause",
+    tip_busy: "Занято — нажми ещё раз через секунду",
+    away_msg:
+      "🛤 <b>Отошёл</b>\nТишина снята · sensitive shell/MCP спрашиваются в Telegram.\nВернулся к ПК: /home · Тишина: /pause",
+    home_msg:
+      "💻 <b>Дома</b>\nApprove не блокирует IDE.\nТишина: /pause · С дивана: /resume · Ушёл: /away",
     status_title: "<b>Cursor ↔ Telegram</b>",
-    status_paused: "Пауза",
+    status_mode: "Режим",
+    mode_away: "отошёл (approve в Telegram)",
+    mode_home: "дома (approve не блокирует)",
+    wait_home_off: "выкл дома",
+    stop_hint_home: "",
+    status_silence: "Тишина",
+    status_paused: "Тишина",
     status_notify: "Уведомления о стопе",
     status_followup_wait: "Ожидание Continue",
     status_approve_wait: "Ожидание approve",
@@ -80,13 +94,14 @@ const STRINGS = {
     status_commands: "<b>Команды</b>",
     status_cmd_menu: "/menu — скиллы, review, режимы",
     status_cmd_status: "/status — этот статус",
-    status_cmd_pause: "/pause — авто-allow + выкл notify",
-    status_cmd_resume: "/resume — обычный режим",
+    status_cmd_away: "/away — ушёл: снять тишину + approve в Telegram",
+    status_cmd_home: "/home — дома: approve не блокирует IDE",
+    status_cmd_pause: "/pause — тишина (выкл notify, авто-allow)",
+    status_cmd_resume: "/resume — с дивана: стоп-сообщения в боте",
     status_cmd_help: "/help — то же, что /status",
     status_locale: "Язык",
-
     listen_hello:
-      "🎧 <b>Слушатель запущен</b>\nКоманды: /menu /status /pause /resume /help\n<i>Reply на стоп → тот чат; без reply → последний. Approve-кнопки тоже здесь.</i>",
+      "🎧 <b>Слушатель запущен</b>\nПо умолчанию: дома + тишина.\nС дивана: /resume · Ушёл: /away · Справка: /status",
     compose_waiting:
       "⏳ Нет активного стопа — префикс из /menu сохранён.\nДождись стопа или reply на нужное сообщение / «Продолжить».",
 
@@ -121,12 +136,16 @@ const STRINGS = {
     menu_nothing: "Нечего отправлять",
     menu_no_stop: "Нет активного стопа — дождись уведомления",
     menu_sent: "📤 Отправлено в Cursor:\n<pre>{payload}</pre>",
+    menu_queued: "📤 В очереди — подтверждение будет на сообщении стопа агента.",
+    menu_queued_tip: "В очереди на стоп",
     menu_stale: "Пункт устарел — открой /menu",
     menu_mode_desc: "режим агента (инструкция в промпте)",
     cmd_menu: "Скиллы, review, режимы",
     cmd_status: "Статус Cursor↔Telegram",
-    cmd_pause: "Пауза approve/notify",
-    cmd_resume: "Снять паузу",
+    cmd_away: "Ушёл — тишина off + approve в Telegram",
+    cmd_home: "Дома — approve не блокирует IDE",
+    cmd_pause: "Тишина — выкл notify",
+    cmd_resume: "С дивана — стоп в боте",
     cmd_help: "Справка",
 
     mode_agent:
@@ -185,7 +204,8 @@ const STRINGS = {
     questions_yes: "yes — looks like it's waiting",
     questions_no: "no / unclear",
     summary: "Summary",
-    stop_hint: "Cursor must be open · reply → this chat",
+    stop_hint:
+      "Continue / reply → this Cursor chat · plain text → latest stop · Cursor must be open",
     btn_continue: "✍️ Continue",
     btn_done: "✔ Done",
     stamp_done: "✔ <b>Done</b>",
@@ -201,10 +221,24 @@ const STRINGS = {
       "⌛ Too late: Cursor closed or the wait ended.\nContinue from the bot is no longer possible — type in the Cursor chat.",
 
     pause_msg:
-      "⏸ <b>Paused</b>\n• Approvals → auto-allow\n• Stop notifications → off\nResume: /resume",
-    resume_msg: "▶ <b>Resumed</b>\nApprovals and notifications are active again.",
+      "🔇 <b>Silence</b>\n• Stop notifications → off\n• Approvals → auto-allow\nCouch: /resume · Left home: /away",
+    resume_msg:
+      "▶ <b>Couch mode</b>\nStop notifications and Continue are on again.\nApprove still does not block at home (/home). Left: /away",
+    resume_msg_away:
+      "▶ <b>Silence cleared</b> (still away)\nStop messages on · sensitive shell/MCP still asked in Telegram.\nHome: /home · Silence: /pause",
+    tip_busy: "Busy — tap again",
+    away_msg:
+      "🛤 <b>Away</b>\nSilence cleared · sensitive shell/MCP asked in Telegram.\nBack at PC: /home · Silence: /pause",
+    home_msg:
+      "💻 <b>Home</b>\nApprove does not block the IDE.\nSilence: /pause · Couch: /resume · Left: /away",
     status_title: "<b>Cursor ↔ Telegram</b>",
-    status_paused: "Paused",
+    status_mode: "Mode",
+    mode_away: "away (approve in Telegram)",
+    mode_home: "home (approve does not block)",
+    wait_home_off: "off at home",
+    stop_hint_home: "",
+    status_silence: "Silence",
+    status_paused: "Silence",
     status_notify: "Stop notifications",
     status_followup_wait: "Continue wait",
     status_approve_wait: "Approve wait",
@@ -213,13 +247,15 @@ const STRINGS = {
     status_commands: "<b>Commands</b>",
     status_cmd_menu: "/menu — skills, review, modes",
     status_cmd_status: "/status — this status",
-    status_cmd_pause: "/pause — auto-allow + mute notify",
-    status_cmd_resume: "/resume — normal mode",
+    status_cmd_away: "/away — left: unmute + approve in Telegram",
+    status_cmd_home: "/home — at home: approve does not block IDE",
+    status_cmd_pause: "/pause — silence (mute notify, auto-allow)",
+    status_cmd_resume: "/resume — couch: stop messages in the bot",
     status_cmd_help: "/help — same as /status",
     status_locale: "Language",
 
     listen_hello:
-      "🎧 <b>Listener started</b>\nCommands: /menu /status /pause /resume /help\n<i>Reply to a stop → that chat; otherwise → latest. Approve buttons work here too.</i>",
+      "🎧 <b>Listener started</b>\nDefault: home + silence.\nCouch: /resume · Away: /away · Help: /status",
     compose_waiting:
       "⏳ No active stop — /menu prefix kept.\nWait for a stop, reply to that message, or tap Continue.",
 
@@ -252,12 +288,16 @@ const STRINGS = {
     menu_nothing: "Nothing to send",
     menu_no_stop: "No active stop — wait for a notification",
     menu_sent: "📤 Sent to Cursor:\n<pre>{payload}</pre>",
+    menu_queued: "📤 Queued — confirmation will appear on the agent stop message.",
+    menu_queued_tip: "Queued for the stop",
     menu_stale: "Stale item — open /menu again",
     menu_mode_desc: "agent mode (instruction in the prompt)",
     cmd_menu: "Skills, review, modes",
     cmd_status: "Cursor↔Telegram status",
-    cmd_pause: "Pause approve/notify",
-    cmd_resume: "Resume",
+    cmd_away: "Away — unmute + approve in Telegram",
+    cmd_home: "Home — approve does not block IDE",
+    cmd_pause: "Silence — mute notify",
+    cmd_resume: "Couch — stop messages in bot",
     cmd_help: "Help",
 
     mode_agent:

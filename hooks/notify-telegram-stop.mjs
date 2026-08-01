@@ -31,6 +31,7 @@ const {
   shortId,
   upsertFollowupPending,
   getFollowupPending,
+  PENDING_BUSY,
   closedFollowupHtml,
   waitForParkedFollowup,
   tlog,
@@ -155,7 +156,8 @@ function shouldNotify(payload, { summary }) {
 }
 
 function resolveFollowupWait(cfg) {
-  // Prefer followup_wait_sec; fall back to reply_wait_sec
+  // Continue / reply-to-chat always available when configured.
+  // /away only gates shell approve — not stop follow-up.
   if (cfg.followup_wait_sec) return cfg.followup_wait_sec;
   if (cfg.reply_wait_sec) return cfg.reply_wait_sec;
   return 0;
@@ -237,7 +239,14 @@ async function main() {
     conversation_id: payload.conversation_id || null,
     status: waitSec ? "waiting" : "notified",
   };
-  if (waitSec) upsertFollowupPending(pendingBase);
+  if (waitSec) {
+    const registered = upsertFollowupPending(pendingBase);
+    if (!registered) {
+      tlog("notify pending register fail → skip Telegram send");
+      process.stdout.write("{}\n");
+      return;
+    }
+  }
 
   let sent;
   try {
@@ -263,7 +272,25 @@ async function main() {
   }
 
   pendingBase.message_id = sent.message_id;
-  upsertFollowupPending({ id, message_id: sent.message_id });
+  {
+    let midOk = false;
+    for (let i = 0; i < 6; i++) {
+      if (
+        upsertFollowupPending({
+          id,
+          message_id: sent.message_id,
+          status: "waiting",
+        })
+      ) {
+        midOk = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 40 + i * 30));
+    }
+    if (!midOk) {
+      tlog(`notify ${id} message_id upsert fail after retries`);
+    }
+  }
 
   let settled = false;
   const markSettled = (status, extra = {}) => {
@@ -295,9 +322,12 @@ async function main() {
 
   try {
     // If Cursor already killed us as "closed" via listener sweep, abort.
-    if (getFollowupPending(id)?.status === "closed") {
-      process.stdout.write("{}\n");
-      return;
+    {
+      const cur = getFollowupPending(id);
+      if (cur !== PENDING_BUSY && cur?.status === "closed") {
+        process.stdout.write("{}\n");
+        return;
+      }
     }
 
     // One deadline for click + optional text after Continue (forever → no wall clock)
@@ -309,9 +339,12 @@ async function main() {
       deadlineMs,
     });
 
-    if (result?.closed || getFollowupPending(id)?.status === "closed") {
-      process.stdout.write("{}\n");
-      return;
+    {
+      const cur = getFollowupPending(id);
+      if (result?.closed || (cur !== PENDING_BUSY && cur?.status === "closed")) {
+        process.stdout.write("{}\n");
+        return;
+      }
     }
 
     const value = result?.value;
@@ -355,7 +388,11 @@ async function main() {
         deadlineMs,
       });
 
-      if (textResult?.closed || getFollowupPending(id)?.status === "closed") {
+      const curAfterText = getFollowupPending(id);
+      if (
+        textResult?.closed ||
+        (curAfterText !== PENDING_BUSY && curAfterText?.status === "closed")
+      ) {
         process.stdout.write("{}\n");
         return;
       }

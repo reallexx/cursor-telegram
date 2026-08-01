@@ -4,20 +4,6 @@
 
 Русская версия: [README.ru.md](./README.ru.md)
 
-## Screenshots
-
-<p align="center">
-  <img src="docs/stop-notify.png" alt="Stop notify with Continue / Done" width="420" />
-  &nbsp;
-  <img src="docs/menu.png" alt="/menu skills and modes" width="420" />
-</p>
-
-<p align="center">
-  <img src="docs/approve.png" alt="Shell/MCP approve from Telegram" width="520" />
-</p>
-
-<p align="center"><sub>Stop notify · <code>/menu</code> · Approve</sub></p>
-
 ## Features
 
 - **Stop notify** — one Telegram message when an Agent turn completes (summary + buttons)
@@ -28,7 +14,8 @@
 - **Listener** — single `getUpdates` consumer (required for buttons)
 
 > User-level Cursor **hooks** (`~/.cursor/hooks.json`). Not Skills. Not Cloud Agents.  
-> Cursor has **no official Telegram product** — only the hooks API. This repo is one way to use it from your phone.
+> Cursor has **no official Telegram product** — only the hooks API. This repo is one way to use it from your phone.  
+> **Default:** home + silence (`/pause`). Couch → `/resume` (stop messages in the bot). Away → `/away` (clears silence + Telegram approve). At home, approve never blocks the IDE.
 
 ## Requirements
 
@@ -70,7 +57,7 @@ Then:
 
 4. **Restart Cursor** → **Customize → Hooks** — you should see `stop`, `beforeShellExecution`, `preToolUse`
 
-5. Run a short Agent turn → Telegram gets **Agent: completed** with buttons
+5. In the bot: `/resume` (default is home + silence) → short Agent turn → Telegram gets **Agent: completed** with buttons
 
 ## Bot commands
 
@@ -78,8 +65,10 @@ Then:
 |---------|--------|
 | `/menu` | Skills, review, modes |
 | `/status` | Status |
-| `/pause` | Auto-allow approve + mute stop notify |
-| `/resume` | Normal mode |
+| `/away` | Away — clear silence + sensitive shell/MCP in Telegram |
+| `/home` | Home — approve does not block the IDE |
+| `/pause` | Silence — mute notify, auto-allow approve |
+| `/resume` | Couch — stop notifications and Continue in the bot |
 | `/help` | Same as status |
 
 ## Config (`~/.cursor/telegram.txt`)
@@ -109,7 +98,8 @@ Secrets: `~/.cursor/telegram.local` or env `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT
 - Buttons dead + `Conflict` in `~/.cursor/telegram.log` → kill extra `node …telegram-listen` / stale `notify-telegram-stop`, keep one listener, restart it
 - «Too late / session closed» → Cursor or that chat’s stop-hook already exited
 - Empty notify → check Hooks output channel; ensure `telegram.local` is valid
-- Approve never asks → `approve_*=1`, not paused (`/resume`), listener running
+- Approve never asks → need `/away` (home/silence never block), `approve_*=1`, listener running
+- No stop messages → clear silence: `/resume` or `/away`
 - **Telegram allowed / silent, but Cursor still shows Run** → two separate gates. Hooks cannot dismiss the IDE Run/Skip card (Cursor limitation). Tap **Run** / **Always Run**, or use Agent auto-run / allow-list. After session-allow, the bot sends a short ping (`session_notify=1`) so the chat is not empty.
 
 ## Repo layout
