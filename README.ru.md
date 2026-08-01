@@ -27,7 +27,8 @@ English: [README.md](./README.md)
 - **`/menu`** — пользовательские скиллы, системные, review (`/review*`), режимы (инструкция в промпте)
 - **Listener** — единственный consumer `getUpdates` (без него кнопки не работают)
 
-> Это user-level **hooks** Cursor (`~/.cursor/hooks.json`), не Skills и не Cloud Agents.
+> Это user-level **hooks** Cursor (`~/.cursor/hooks.json`), не Skills и не Cloud Agents.  
+> У Cursor **нет официального Telegram** — только API hooks. Этот репозиторий — один из способов управлять агентом с телефона.
 
 ## Требования
 
@@ -109,6 +110,19 @@ PowerShell:
 - Не коммитить `telegram.local`, не светить token в Issues
 - При утечке — перевыпустить token в BotFather
 - `failClosed: false` на approve, чтобы падение скрипта не блокировало агента навсегда
+
+## Похожие решения
+
+Та же задача (Cursor с телефона). Выбирай по вкусу:
+
+| Проект | Подход | Заметки |
+|--------|--------|---------|
+| **Этот репо** | User-level **hooks** + один Telegram listener | Стоп, Continue в **тот же чат IDE**, approve shell/MCP, `/menu`, `ru`/`en`, упор на Windows |
+| [cursor-chat-bridge](https://github.com/udah1/cursor-chat-bridge) | Hooks + Telegram / Discord / GitHub | Auto-resume с телефона; несколько каналов |
+| [cursor-autopilot](https://github.com/heyzgj/cursor-autopilot) | **Расширение** + rules | Адаптеры Telegram / почта / Feishu |
+| [cursor-claw](https://github.com/jes/cursor-claw) | Telegram → `cursor agent` **CLI** | Отдельная сессия агента, не открытый чат IDE |
+
+Не путать с Telegram **MCP** (Composio и т.п.): агент *зывает* API Telegram, а не управляет твоей сессией Cursor.
 
 ## Лицензия
 

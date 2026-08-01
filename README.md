@@ -27,7 +27,8 @@
 - **`/menu`** — user skills (`~/.cursor/skills`), system skills (`skills-cursor`), review (`/review*`), modes (prompt instructions)
 - **Listener** — single `getUpdates` consumer (required for buttons)
 
-> User-level Cursor **hooks** (`~/.cursor/hooks.json`). Not Skills. Not Cloud Agents.
+> User-level Cursor **hooks** (`~/.cursor/hooks.json`). Not Skills. Not Cloud Agents.  
+> Cursor has **no official Telegram product** — only the hooks API. This repo is one way to use it from your phone.
 
 ## Requirements
 
@@ -123,6 +124,19 @@ install.ps1 / install.sh
 - Never commit `telegram.local` or paste bot tokens into issues/PRs
 - Rotate the token in BotFather if it ever leaks
 - `failClosed: false` on approve hooks avoids freezing the agent if the script crashes
+
+## Related / alternatives
+
+Same problem space (remote Cursor from chat apps). Pick what fits:
+
+| Project | Approach | Notes |
+|---------|----------|--------|
+| **This repo** | User-level **hooks** + one Telegram listener | Stop notify, Continue into the **same IDE chat**, shell/MCP approve, `/menu`, `ru`/`en`, Windows-first |
+| [cursor-chat-bridge](https://github.com/udah1/cursor-chat-bridge) | Hooks + Telegram / Discord / GitHub | Phone-first auto-resume loop; multi-channel |
+| [cursor-autopilot](https://github.com/heyzgj/cursor-autopilot) | VS Code/Cursor **extension** + rules | Telegram / email / Feishu adapters |
+| [cursor-claw](https://github.com/jes/cursor-claw) | Telegram → `cursor agent` **CLI** | Separate agent session, not the open IDE chat |
+
+Not the same thing: Telegram **MCP** tools (e.g. Composio) let the agent *call* Telegram APIs — they do not remote-control your Cursor session.
 
 ## License
 
