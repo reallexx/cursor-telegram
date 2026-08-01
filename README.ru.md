@@ -82,6 +82,7 @@ PowerShell:
 | `approve_shell` / `approve_mcp` | Спрашивать в боте |
 | `approve_*_mode=sensitive` | Только «опасные» (`all` — всё) |
 | `session_allow_min` | Длительность «Разрешить на N»; кнопка только для повторяемых типов (`git push`, сеть, …) |
+| `session_notify` | `1` = короткий пинг в Telegram, когда сессия пропускает кнопки |
 | `locale` | `auto` (ОС) · `ru` · `en` — язык бота (или env `TELEGRAM_LOCALE`) |
 
 В `hooks.json` у stop/approve **`timeout` ≤ 2147000** секунд. Больше → переполнение int32 → хук умирает сразу.
@@ -100,6 +101,7 @@ PowerShell:
 - «Поздно / сессия закрыта» → Cursor или хук этого чата уже завершились
 - Тишина → Output → Hooks, проверить `telegram.local`
 - Approve не спрашивает → `/resume`, listener жив, `approve_*=1`
+- **В боте разрешил / тишина, а в Cursor висит Run** → два разных слоя. Хук не может убрать карточку Run/Skip в IDE (ограничение Cursor). Жми **Run** / **Always Run** или включи auto-run / allow-list у агента. После session-allow бот шлёт короткий пинг (`session_notify=1`), чтобы в чате не было пусто.
 
 ## Новые скиллы
 

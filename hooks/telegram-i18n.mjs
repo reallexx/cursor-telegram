@@ -31,7 +31,9 @@ const STRINGS = {
     project: "Проект",
     folder: "Папка",
     early_ping:
-      "👀 <b>Нужно подтверждение</b> · если в Cursor висит <b>Run/Skip</b> — нажми там",
+      "👀 <b>Нужно подтверждение</b> · в Cursor тоже может висеть <b>Run</b> — это отдельно от бота, нажми там",
+    session_auto:
+      "⚡ <b>Авто по сессии</b> ({family})\nПроект: {project}\nЕсли в Cursor висит <b>Run</b> — нажми <b>Run</b> (бот уже разрешил, IDE — второй слой).",
     deny_user: "Отклонено в Telegram",
     deny_agent: "Blocked: denied in Telegram approval.",
     timeout_user: "Время подтверждения в Telegram истекло",
@@ -163,7 +165,9 @@ const STRINGS = {
     project: "Project",
     folder: "Folder",
     early_ping:
-      "👀 <b>Approval needed</b> · if Cursor shows <b>Run/Skip</b> — tap there",
+      "👀 <b>Approval needed</b> · Cursor may also show <b>Run</b> — that's separate from the bot, tap it there",
+    session_auto:
+      "⚡ <b>Auto-allowed by session</b> ({family})\nProject: {project}\nIf Cursor shows <b>Run</b> — tap <b>Run</b> (bot already allowed; IDE is a second gate).",
     deny_user: "Denied in Telegram",
     deny_agent: "Blocked: denied in Telegram approval.",
     timeout_user: "Telegram approval timed out",

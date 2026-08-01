@@ -25,6 +25,7 @@ const {
   escapeHtml,
   truncate,
   sessionFingerprint,
+  commandFamily,
   isSessionAllowUseful,
   isSessionAllowed,
   grantSessionAllow,
@@ -177,7 +178,30 @@ async function main() {
   }
 
   if (isSessionAllowed(req.fp)) {
-    console.error(`[approve-telegram] session-allow hit kind=${req.kind}`);
+    const family = commandFamily(req.kind, req.detail, {
+      toolName: req.toolName,
+    });
+    tlog(`approve session-allow hit kind=${req.kind} family=${family}`);
+    // Cursor IDE Run/Skip is a separate gate — tell the user so Telegram doesn't feel "empty"
+    if (enabledFlag(cfg.session_notify ?? "1")) {
+      const project = projectName(
+        payload.workspace_roots,
+        payload.transcript_path
+      );
+      try {
+        await tg(cfg.token, "sendMessage", {
+          chat_id: cfg.chat_id,
+          text: t(L, "session_auto", {
+            family: escapeHtml(family.replace(/^shell:/, "")),
+            project: escapeHtml(project),
+          }),
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        });
+      } catch (err) {
+        console.error(`[approve-telegram] session notify: ${err.message}`);
+      }
+    }
     out({ permission: "allow" });
     return;
   }

@@ -91,6 +91,7 @@ Then:
 | `approve_shell` / `approve_mcp` | Telegram approve |
 | `approve_*_mode=sensitive` | Only risky commands (`all` = everything) |
 | `session_allow_min` | “Allow for N” duration; button only for reusable kinds (`git push`, network, …) |
+| `session_notify` | `1` = short Telegram ping when session-allow skips the buttons |
 | `locale` | `auto` (OS) · `ru` · `en` — bot UI language (also `TELEGRAM_LOCALE`) |
 
 **Important:** in `hooks.json`, `timeout` for stop/approve must be **≤ 2147000** (seconds). Larger values overflow int32 ms and kill the hook immediately.
@@ -109,6 +110,7 @@ Secrets: `~/.cursor/telegram.local` or env `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT
 - «Too late / session closed» → Cursor or that chat’s stop-hook already exited
 - Empty notify → check Hooks output channel; ensure `telegram.local` is valid
 - Approve never asks → `approve_*=1`, not paused (`/resume`), listener running
+- **Telegram allowed / silent, but Cursor still shows Run** → two separate gates. Hooks cannot dismiss the IDE Run/Skip card (Cursor limitation). Tap **Run** / **Always Run**, or use Agent auto-run / allow-list. After session-allow, the bot sends a short ping (`session_notify=1`) so the chat is not empty.
 
 ## Repo layout
 

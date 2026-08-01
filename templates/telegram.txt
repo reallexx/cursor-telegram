@@ -19,4 +19,6 @@ approve_mcp=1
 approve_mcp_mode=sensitive
 approve_wait_sec=forever
 session_allow_min=10080
+# 1 = short Telegram ping when session-allow skips the approve buttons
+session_notify=1
 early_ping=1

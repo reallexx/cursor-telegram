@@ -84,6 +84,7 @@ export function finalizeConfig(base) {
   const sam = Number(cfg.session_allow_min ?? "60");
   cfg.session_allow_min = Number.isFinite(sam) && sam > 0 ? sam : 60;
   cfg.locale = resolveLocale(cfg.locale ?? process.env.TELEGRAM_LOCALE ?? "auto");
+  cfg.session_notify = String(cfg.session_notify ?? "1").toLowerCase();
   return cfg;
 }
 
