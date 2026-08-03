@@ -32,6 +32,8 @@ const {
   editMessageHtml,
   isPaused,
   isAway,
+  isIdeWaitTool,
+  shouldHomeWaitNotify,
   tlog,
   parseHookPayload,
   upsertApprovePending,
@@ -157,24 +159,23 @@ async function main() {
     return;
   }
 
+  const ideWait = req.kind !== "shell" && isIdeWaitTool(req.toolName);
+  let needsGate = false;
   if (req.kind === "shell") {
-    if (!enabledFlag(cfg.approve_shell)) {
-      out({ permission: "allow" });
-      return;
+    if (enabledFlag(cfg.approve_shell)) {
+      needsGate =
+        cfg.approve_shell_mode === "all" || isSensitiveShell(req.detail);
     }
-    if (cfg.approve_shell_mode !== "all" && !isSensitiveShell(req.detail)) {
-      out({ permission: "allow" });
-      return;
-    }
-  } else {
-    if (!enabledFlag(cfg.approve_mcp)) {
-      out({ permission: "allow" });
-      return;
-    }
-    if (cfg.approve_mcp_mode !== "all" && !isSensitiveMcp(req.toolName, req.toolInput)) {
-      out({ permission: "allow" });
-      return;
-    }
+  } else if (enabledFlag(cfg.approve_mcp)) {
+    needsGate =
+      cfg.approve_mcp_mode === "all" ||
+      isSensitiveMcp(req.toolName, req.toolInput);
+  }
+
+  // Nothing to gate and not an IDE wait hint → silent allow
+  if (!needsGate && !ideWait) {
+    out({ permission: "allow" });
+    return;
   }
 
   if (isPaused()) {
@@ -183,24 +184,50 @@ async function main() {
     return;
   }
 
-  // IDE-first: never block the agent while at the PC (/home). Gate only in /away.
+  const family = commandFamily(req.kind, req.detail, {
+    toolName: req.toolName,
+  });
+  const project = projectName(payload.workspace_roots, payload.transcript_path);
+
+  // /home: never block; when not silent, ping that IDE may show Allow/Run.
   if (!isAway()) {
-    tlog(`approve home → allow kind=${req.kind} (IDE-first, no Telegram wait)`);
+    if (enabledFlag(cfg.session_notify ?? "1")) {
+      const key = `home:${req.kind}:${family}:${project}`;
+      if (shouldHomeWaitNotify(key)) {
+        try {
+          await tg(cfg.token, "sendMessage", {
+            chat_id: cfg.chat_id,
+            text: t(L, "home_wait", {
+              family: escapeHtml(family.replace(/^shell:/, "")),
+              project: escapeHtml(project),
+            }),
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+          });
+          tlog(`approve home → notify kind=${req.kind} family=${family}`);
+        } catch (err) {
+          console.error(`[approve-telegram] home notify: ${err.message}`);
+        }
+      } else {
+        tlog(`approve home → notify throttled kind=${req.kind}`);
+      }
+    } else {
+      tlog(`approve home → allow kind=${req.kind} (notify off)`);
+    }
+    out({ permission: "allow" });
+    return;
+  }
+
+  // /away: IDE-wait tools are notify-only hints — still do not Telegram-gate them
+  if (!needsGate) {
     out({ permission: "allow" });
     return;
   }
 
   if (isSessionAllowed(req.fp)) {
-    const family = commandFamily(req.kind, req.detail, {
-      toolName: req.toolName,
-    });
     tlog(`approve session-allow hit kind=${req.kind} family=${family}`);
     // Cursor IDE Run/Skip is a separate gate — tell the user so Telegram doesn't feel "empty"
     if (enabledFlag(cfg.session_notify ?? "1")) {
-      const project = projectName(
-        payload.workspace_roots,
-        payload.transcript_path
-      );
       try {
         await tg(cfg.token, "sendMessage", {
           chat_id: cfg.chat_id,
@@ -220,7 +247,6 @@ async function main() {
   }
 
   const id = shortId();
-  const project = projectName(payload.workspace_roots, payload.transcript_path);
   const html = buildApproveHtml({
     title: req.title,
     project,

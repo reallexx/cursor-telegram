@@ -57,7 +57,7 @@ PowerShell:
 | `/menu` | Скиллы, review, режимы |
 | `/status` | Статус |
 | `/away` | Ушёл — снять тишину + sensitive shell/MCP в Telegram |
-| `/home` | Дома — approve не блокирует IDE |
+| `/home` | Дома — approve не блокирует IDE; при `/resume` шлёт пинг «ждёт Allow/Run» |
 | `/pause` | Тишина — выкл notify, авто-allow approve |
 | `/resume` | С дивана — стоп-уведомления и Continue в боте |
 | `/help` | Как status |

@@ -66,7 +66,7 @@ Then:
 | `/menu` | Skills, review, modes |
 | `/status` | Status |
 | `/away` | Away — clear silence + sensitive shell/MCP in Telegram |
-| `/home` | Home — approve does not block the IDE |
+| `/home` | Home — approve does not block; with `/resume` pings when IDE may show Allow/Run |
 | `/pause` | Silence — mute notify, auto-allow approve |
 | `/resume` | Couch — stop notifications and Continue in the bot |
 | `/help` | Same as status |

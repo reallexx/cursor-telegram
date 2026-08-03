@@ -34,6 +34,8 @@ const STRINGS = {
       "👀 <b>Нужно подтверждение</b> · в Cursor тоже может висеть <b>Run</b> — это отдельно от бота, нажми там",
     session_auto:
       "⚡ <b>Авто по сессии</b> ({family})\nПроект: {project}\nЕсли в Cursor висит <b>Run</b> — нажми <b>Run</b> (бот уже разрешил, IDE — второй слой).",
+    home_wait:
+      "👀 <b>Ждёт подтверждения в Cursor</b>\n{family}\nПроект: {project}\nБот не блокирует (/home). Если висит <b>Allow</b> / <b>Run</b> — нажми в IDE.",
     deny_user: "Отклонено в Telegram",
     deny_agent: "Blocked: denied in Telegram approval.",
     timeout_user: "Время подтверждения в Telegram истекло",
@@ -187,6 +189,8 @@ const STRINGS = {
       "👀 <b>Approval needed</b> · Cursor may also show <b>Run</b> — that's separate from the bot, tap it there",
     session_auto:
       "⚡ <b>Auto-allowed by session</b> ({family})\nProject: {project}\nIf Cursor shows <b>Run</b> — tap <b>Run</b> (bot already allowed; IDE is a second gate).",
+    home_wait:
+      "👀 <b>Waiting for confirmation in Cursor</b>\n{family}\nProject: {project}\nBot does not block (/home). If <b>Allow</b> / <b>Run</b> is stuck — tap it in the IDE.",
     deny_user: "Denied in Telegram",
     deny_agent: "Blocked: denied in Telegram approval.",
     timeout_user: "Telegram approval timed out",

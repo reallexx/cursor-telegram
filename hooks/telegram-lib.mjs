@@ -32,6 +32,7 @@ export const LISTEN_PID_PATH = path.join(CURSOR_DIR, "telegram-listen.pid");
 export const LOG_PATH = path.join(CURSOR_DIR, "telegram.log");
 export const PENDING_PATH = path.join(CURSOR_DIR, "telegram-pending.json");
 export const PENDING_LOCK_PATH = path.join(CURSOR_DIR, "telegram-pending.lock");
+export const HOME_NOTIFY_PATH = path.join(CURSOR_DIR, "telegram-home-notify.json");
 
 function parseKeyValues(raw) {
   const cfg = {};
@@ -772,6 +773,37 @@ export function isSensitiveShell(command) {
     /Remove-Item.*-Recurse|rm\s+-rf|del\s+\/s/i.test(c) ||
     /docker\s+(push|system\s+prune)|kubectl\s+apply/i.test(c)
   );
+}
+
+/** Tools that often leave an IDE Allow / subagent card (notify-only in /home). */
+export function isIdeWaitTool(toolName) {
+  const name = String(toolName || "");
+  return /^(Task|AwaitShell|Await|best-of-n-runner|BestOfN)$/i.test(name);
+}
+
+/** Throttle home-mode wait pings (same key within window → skip). */
+export function shouldHomeWaitNotify(key, windowMs = 60000) {
+  const k = String(key || "").trim() || "_";
+  let map = {};
+  try {
+    map = JSON.parse(fs.readFileSync(HOME_NOTIFY_PATH, "utf8")) || {};
+  } catch {
+    map = {};
+  }
+  const now = Date.now();
+  const prev = Number(map[k] || 0);
+  if (Number.isFinite(prev) && now - prev < windowMs) return false;
+  const next = { [k]: now };
+  for (const [id, ts] of Object.entries(map)) {
+    if (Number(ts) && now - Number(ts) < windowMs * 10) next[id] = ts;
+  }
+  next[k] = now;
+  try {
+    fs.writeFileSync(HOME_NOTIFY_PATH, JSON.stringify(next, null, 2), "utf8");
+  } catch {
+    // ignore
+  }
+  return true;
 }
 
 export function isSensitiveMcp(toolName, toolInput) {
