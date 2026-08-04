@@ -20,7 +20,7 @@ const STRINGS = {
     project: "Проект",
     no_folder: "Cursor (без папки)",
     wait_ping:
-      "👀 <b>Allow / Run в Cursor?</b>\n{family} · {project}\nЕсли в IDE висит кнопка <b>Allow</b> / <b>Run</b> — нажми её в чате этого проекта.",
+      "👀 <b>Allow / Run в Cursor?</b>\n{family} · {project}\nКоманда ещё не завершилась — скорее всего ждёт <b>Allow</b> / <b>Run</b> в чате этого проекта.",
     cmd_retired:
       "Команда больше не используется.\nВкл: /start · Выкл: /mute · Статус: /status",
 
@@ -141,7 +141,7 @@ const STRINGS = {
     project: "Project",
     no_folder: "Cursor (no folder)",
     wait_ping:
-      "👀 <b>Allow / Run in Cursor?</b>\n{family} · {project}\nIf the IDE shows an <b>Allow</b> / <b>Run</b> prompt — tap it in that project's chat.",
+      "👀 <b>Allow / Run in Cursor?</b>\n{family} · {project}\nStill running — likely waiting on <b>Allow</b> / <b>Run</b> in that project's chat.",
     cmd_retired:
       "That command is no longer used.\nOn: /start · Mute: /mute · Status: /status",
 

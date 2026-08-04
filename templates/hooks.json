@@ -8,10 +8,38 @@
         "failClosed": false
       }
     ],
+    "afterShellExecution": [
+      {
+        "command": "node ./hooks/approve-telegram.mjs",
+        "timeout": 30,
+        "failClosed": false
+      }
+    ],
     "preToolUse": [
       {
         "command": "node ./hooks/approve-telegram.mjs",
         "timeout": 2147000,
+        "failClosed": false
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "node ./hooks/approve-telegram.mjs",
+        "timeout": 30,
+        "failClosed": false
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "node ./hooks/approve-telegram.mjs",
+        "timeout": 30,
+        "failClosed": false
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "node ./hooks/approve-telegram.mjs",
+        "timeout": 30,
         "failClosed": false
       }
     ],

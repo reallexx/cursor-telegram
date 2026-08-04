@@ -8,6 +8,9 @@ import {
   commandFamily,
   parseConfig,
   detectAssistantQuestions,
+  isSensitiveShell,
+  isScriptRunCommand,
+  waitCommandKey,
 } from "../hooks/telegram-lib.mjs";
 
 describe("parseBotCommand", () => {
@@ -107,10 +110,46 @@ describe("detectAssistantQuestions", () => {
   });
 });
 
+describe("isSensitiveShell / isScriptRunCommand", () => {
+  it("flags Stop-Process+python as process-kill, not bare script-run", () => {
+    const cmd =
+      "Stop-Process -Name 'MediaElch' -Force; python 'E:\\Soft\\Jellyfin\\Backup\\rename-arr-cleanup.py'";
+    assert.equal(isSensitiveShell(cmd), true);
+    assert.equal(commandFamily("shell", cmd), "shell:process-kill");
+    // Bare long-running scripts must NOT schedule wait-pings (false “Allow/Run”)
+    assert.equal(isScriptRunCommand("py -3 rename.py"), true);
+    assert.equal(isSensitiveShell("py -3 rename.py"), false);
+    assert.equal(isSensitiveShell("python rename-arr-cleanup.py"), false);
+  });
+
+  it("ignores python --version and bare Remove-Item", () => {
+    assert.equal(isScriptRunCommand("python --version"), false);
+    assert.equal(isSensitiveShell("python --version"), false);
+    assert.equal(isSensitiveShell("Remove-Item -LiteralPath tmp.txt"), false);
+    assert.equal(
+      isSensitiveShell("Remove-Item -Recurse -Force build"),
+      true
+    );
+  });
+
+  it("ignores simple directory listing", () => {
+    assert.equal(isSensitiveShell("Get-ChildItem -Path ."), false);
+  });
+
+  it("waitCommandKey ignores cwd so afterShell can cancel", () => {
+    const d = "python script.py";
+    assert.equal(
+      waitCommandKey("shell", d, "E:\\a"),
+      waitCommandKey("shell", d, "")
+    );
+  });
+});
+
 describe("parseConfig", () => {
-  it("defaults session_notify on and drops removed session_allow_min", () => {
+  it("defaults session_notify and wait_ping_delay_sec", () => {
     const cfg = parseConfig("locale=en\nnotify_stop=1\n");
     assert.equal(cfg.session_notify, "1");
+    assert.equal(cfg.wait_ping_delay_sec, 12);
     assert.equal(cfg.session_allow_min, undefined);
     assert.equal(cfg.approve_wait_sec, undefined);
   });

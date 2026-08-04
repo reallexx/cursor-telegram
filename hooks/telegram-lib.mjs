@@ -33,6 +33,8 @@ export const PENDING_LOCK_PATH = path.join(CURSOR_DIR, "telegram-pending.lock");
 export const WAIT_NOTIFY_PATH = path.join(CURSOR_DIR, "telegram-home-notify.json");
 /** @deprecated use WAIT_NOTIFY_PATH */
 export const HOME_NOTIFY_PATH = WAIT_NOTIFY_PATH;
+/** Deferred wait-pings: scheduled on before*; cancelled on afterShell / postToolUse. */
+export const WAIT_PENDING_PATH = path.join(CURSOR_DIR, "telegram-wait-pending.json");
 
 function parseKeyValues(raw) {
   const cfg = {};
@@ -82,6 +84,10 @@ export function finalizeConfig(base) {
   cfg.early_ping = String(cfg.early_ping ?? "1").toLowerCase();
   cfg.locale = resolveLocale(cfg.locale ?? process.env.TELEGRAM_LOCALE ?? "auto");
   cfg.session_notify = String(cfg.session_notify ?? "1").toLowerCase();
+  // Delay before Telegram wait-ping: cancel if afterShell/postToolUse arrives first
+  const wpd = Number(cfg.wait_ping_delay_sec ?? "12");
+  cfg.wait_ping_delay_sec =
+    Number.isFinite(wpd) && wpd >= 1 ? Math.min(wpd, 120) : 12;
   return cfg;
 }
 
@@ -169,9 +175,19 @@ export function commandFamily(kind, detail, { toolName } = {}) {
     return "shell:network";
   }
   if (/\bssh\b|\bscp\b|\brsync\b/i.test(c)) return "shell:remote-copy";
-  if (/Remove-Item.*-Recurse|rm\s+-rf|del\s+\/s/i.test(c)) {
+  if (/Stop-Process|taskkill|\bpkill\b|\bkill\s+-/i.test(c)) {
+    return "shell:process-kill";
+  }
+  if (
+    /\b(Move-Item|Rename-Item|robocopy|xcopy)\b/i.test(c) ||
+    /Copy-Item[\s\S]*-Recurse/i.test(c)
+  ) {
+    return "shell:fs-mutate";
+  }
+  if (/Remove-Item[\s\S]*-Recurse|rm\s+-rf|del\s+\/s/i.test(c)) {
     return "shell:destructive-delete";
   }
+  if (isScriptRunCommand(c)) return "shell:script-run";
 
   const bare = c
     .replace(/("[^"]*"|'[^']*')/g, " ")
@@ -750,6 +766,22 @@ export function detectAssistantQuestions(text) {
   return has ? "yes" : "no";
 }
 
+/** python/py/node invoking a script (not `python --version`). */
+export function isScriptRunCommand(command) {
+  const c = String(command || "");
+  const runsCode = /\.py\b/i.test(c) || /\s-[cm]\b/.test(c);
+  if (/\bpy(\.exe)?\b/i.test(c) && runsCode) return true;
+  if (/\bpython(\d+)?(\.exe)?\b/i.test(c) && runsCode) return true;
+  if (/\bnode(\.exe)?\b/i.test(c) && /\.(m?js|cjs)\b/i.test(c)) return true;
+  return false;
+}
+
+/**
+ * Heuristic for wait-ping when approve_shell_mode=sensitive.
+ * Deliberately excludes bare python/node script runs: long auto-allowed jobs look like
+ * “still waiting” under deferred ping. Jellyfin-style Stop-Process+python is covered by process-kill.
+ * Use approve_shell_mode=all to watch every shell. No Cursor hook for “Allow/Run UI visible”.
+ */
 export function isSensitiveShell(command) {
   const c = String(command || "");
   return (
@@ -758,8 +790,143 @@ export function isSensitiveShell(command) {
     /\b\d+:[A-Za-z0-9_-]{20,}\b/.test(c) ||
     /\bssh\b|\bscp\b|\brsync\b/i.test(c) ||
     /git\s+push|npm\s+publish|gh\s+repo\s+delete/i.test(c) ||
-    /Remove-Item.*-Recurse|rm\s+-rf|del\s+\/s/i.test(c) ||
+    /Stop-Process|taskkill|\bpkill\b|\bkill\s+-/i.test(c) ||
+    /\b(Move-Item|Rename-Item|robocopy|xcopy)\b/i.test(c) ||
+    /Copy-Item[\s\S]*-Recurse/i.test(c) ||
+    /Remove-Item[\s\S]*-Recurse|rm\s+-rf|del\s+\/s/i.test(c) ||
     /docker\s+(push|system\s+prune)|kubectl\s+apply/i.test(c)
+  );
+}
+
+function normalizeWaitDetail(detail) {
+  return String(detail || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 500);
+}
+
+/**
+ * Stable key so afterShell/postToolUse can cancel the matching before* schedule.
+ * cwd is ignored: afterShell payload often omits it.
+ */
+export function waitCommandKey(kind, detail, _cwd = "") {
+  const h = crypto.createHash("sha256");
+  h.update(String(kind || ""));
+  h.update("\0");
+  h.update(normalizeWaitDetail(detail));
+  return h.digest("hex").slice(0, 16);
+}
+
+function readWaitPending() {
+  try {
+    const j = JSON.parse(fs.readFileSync(WAIT_PENDING_PATH, "utf8"));
+    return j && typeof j === "object" && j.entries && typeof j.entries === "object"
+      ? j.entries
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeWaitPending(entries) {
+  fs.writeFileSync(
+    WAIT_PENDING_PATH,
+    JSON.stringify({ entries, updated_at: new Date().toISOString() }, null, 2),
+    "utf8"
+  );
+}
+
+/** Schedule a deferred wait-ping (listener flushes after wait_ping_delay_sec). */
+export function scheduleWaitPing(entry) {
+  const key = String(entry?.key || "").trim();
+  if (!key) return false;
+  const entries = readWaitPending();
+  entries[key] = {
+    key,
+    kind: entry.kind || "shell",
+    family: entry.family || "",
+    project: entry.project || "",
+    locale: entry.locale || "en",
+    at: Date.now(),
+  };
+  // Drop stale (>10 min)
+  const now = Date.now();
+  for (const [k, e] of Object.entries(entries)) {
+    if (!e?.at || now - Number(e.at) > 10 * 60 * 1000) delete entries[k];
+  }
+  writeWaitPending(entries);
+  tlog(`wait-ping schedule key=${key} family=${entry.family || "-"}`);
+  return true;
+}
+
+export function cancelWaitPing(key) {
+  const k = String(key || "").trim();
+  if (!k) return false;
+  const entries = readWaitPending();
+  if (!entries[k]) return false;
+  delete entries[k];
+  writeWaitPending(entries);
+  tlog(`wait-ping cancel key=${k}`);
+  return true;
+}
+
+export function cancelWaitPingForCommand(kind, detail, cwd = "") {
+  return cancelWaitPing(waitCommandKey(kind, detail, cwd));
+}
+
+/**
+ * Send Telegram pings for schedules older than delay (still not cancelled by after*).
+ * Best-effort stand-in for “Run/Allow still waiting” — Cursor has no UI-shown hook.
+ */
+export async function flushDueWaitPings(cfg) {
+  const delayMs = Math.max(1, Number(cfg.wait_ping_delay_sec) || 6) * 1000;
+  const entries = readWaitPending();
+  const now = Date.now();
+  const due = Object.values(entries).filter(
+    (e) => e && now - Number(e.at || 0) >= delayMs
+  );
+  if (!due.length) return 0;
+
+  const L = cfg.locale || "en";
+  let sent = 0;
+  for (const e of due) {
+    const key = e.key;
+    // Remove first so a crash mid-send does not double-ping forever
+    const cur = readWaitPending();
+    if (!cur[key]) continue;
+    delete cur[key];
+    writeWaitPending(cur);
+
+    if (!enabledSessionNotify(cfg)) continue;
+    const throttleKey = `wait:${e.kind}:${e.family}:${e.project}`;
+    if (!shouldWaitNotify(throttleKey)) {
+      tlog(`wait-ping flush throttled project=${e.project}`);
+      continue;
+    }
+    try {
+      await tg(cfg.token, "sendMessage", {
+        chat_id: cfg.chat_id,
+        text: t(e.locale || L, "wait_ping", {
+          family: escapeHtml(formatWaitFamilyLabel(e.family)),
+          project: escapeHtml(e.project || "?"),
+        }),
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      });
+      tlog(
+        `wait-ping flush kind=${e.kind} family=${e.family} project=${e.project}`
+      );
+      sent++;
+    } catch (err) {
+      tlog(`wait-ping flush fail: ${err.message}`);
+    }
+  }
+  return sent;
+}
+
+function enabledSessionNotify(cfg) {
+  return !["0", "false", "off", "no"].includes(
+    String(cfg.session_notify ?? "1").toLowerCase()
   );
 }
 

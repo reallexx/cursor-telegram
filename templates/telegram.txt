@@ -17,5 +17,7 @@ approve_shell=1
 approve_shell_mode=sensitive
 approve_mcp=1
 approve_mcp_mode=sensitive
-# 1 = short Telegram ping when Cursor may show Allow/Run (active bot only)
+# 1 = Telegram wait-ping when a sensitive command has not finished after delay
+# (cancelled if afterShell/postToolUse fires first — best-effort “still waiting on Run”)
 session_notify=1
+wait_ping_delay_sec=12

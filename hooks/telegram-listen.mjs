@@ -16,6 +16,7 @@ import {
   claimListenSingleton,
   releaseListenSingleton,
   sweepClosedFollowups,
+  flushDueWaitPings,
   getFollowupPending,
   PENDING_BUSY,
   upsertFollowupPending,
@@ -185,8 +186,18 @@ async function main() {
   }
 
   let lastSweep = 0;
+  let lastWaitFlush = 0;
 
   for (;;) {
+    if (Date.now() - lastWaitFlush > 1500) {
+      lastWaitFlush = Date.now();
+      try {
+        await flushDueWaitPings(cfg);
+      } catch (err) {
+        console.error(`[telegram-listen] wait-ping flush: ${err.message}`);
+      }
+    }
+
     if (Date.now() - lastSweep > 15000) {
       lastSweep = Date.now();
       try {

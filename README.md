@@ -76,8 +76,9 @@ Legacy aliases: `/resume` → `/start`; `/stop` / `/pause` → `/mute` (kept so 
 |-----|---------|
 | `notify_stop=1` | Stop notifications (when bot is active) |
 | `followup_wait_sec=forever` | Wait for Continue/text (capped by hook timeout ≈ 24d) |
-| `approve_shell` / `approve_mcp` | Which events can trigger wait pings (`sensitive` / `all`) |
-| `session_notify` | `1` = ping when Cursor may show Allow/Run |
+| `approve_shell` / `approve_mcp` | Wait-ping filter (`1`/`0`); `*_mode=sensitive` (heuristic) or `all` (every shell/MCP) |
+| `session_notify` | `1` = deferred wait-ping (see below) |
+| `wait_ping_delay_sec` | Seconds to wait before pinging (default `12`); cancelled if the command finishes first |
 | `locale` | `auto` (OS) · `ru` · `en` — bot UI language (also `TELEGRAM_LOCALE`) |
 
 **Important:** in `hooks.json`, `timeout` for stop/approve must be **≤ 2147000** (seconds). Larger values overflow int32 ms and kill the hook immediately.
@@ -96,7 +97,7 @@ Secrets: `~/.cursor/telegram.local` or env `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT
 - «Too late / session closed» → Cursor or that chat’s stop-hook already exited
 - Empty notify → check Hooks output channel; ensure `telegram.local` is valid
 - No stop messages → `/start` (default is `/mute`)
-- **Cursor shows Allow / Run** → IDE only; Telegram never waits for allow/deny and cannot tap Allow/Run/Allow all. With `/start` + `session_notify=1` the bot only pings. Use Run / Always Run or agent allow-list.
+- **Cursor shows Allow / Run** → IDE only; there is **no Cursor hook** for “UI card is visible”. With `/start` + `session_notify=1` we schedule a ping and **cancel it** if `afterShell` / `postToolUse` fires within `wait_ping_delay_sec` (command already ran → no ping). Long auto-runs can still false-ping; use `approve_shell_mode=all` only if you want every shell watched.
 - Typing «да» / «ok» is a normal follow-up when a stop is waiting — it is not an approve answer.
 
 ## Repo layout

@@ -67,8 +67,9 @@ PowerShell:
 |------|--------|
 | `notify_stop=1` | Уведомления о стопе (когда бот активен) |
 | `followup_wait_sec=forever` | Ждать Continue/текст (лимит ≈ timeout хука ~24д) |
-| `approve_shell` / `approve_mcp` | Какие события дают пинг ожидания (`sensitive` / `all`) |
-| `session_notify` | `1` = пинг, если в Cursor может висеть Allow/Run |
+| `approve_shell` / `approve_mcp` | Фильтр пингов (`1`/`0`); `*_mode=sensitive` (эвристика) или `all` (каждый shell/MCP) |
+| `session_notify` | `1` = отложенный wait-ping (см. ниже) |
+| `wait_ping_delay_sec` | Секунд до пинга (по умолчанию `12`); отмена, если команда успела завершиться |
 | `locale` | `auto` (ОС) · `ru` · `en` — язык бота (или env `TELEGRAM_LOCALE`) |
 
 В `hooks.json` у stop/approve **`timeout` ≤ 2147000** секунд. Больше → переполнение int32 → хук умирает сразу.
@@ -87,7 +88,7 @@ PowerShell:
 - «Поздно / сессия закрыта» → Cursor или хук этого чата уже завершились
 - Бот молчит совсем → Output → Hooks, проверить `telegram.local`
 - Нет стоп-сообщений → `/start` (по умолчанию `/mute`)
-- **В Cursor висит Allow / Run** → только IDE; Telegram не ждёт allow/deny и не жмёт Allow/Run/Allow all. При `/start` + `session_notify=1` бот только пингует. Жми Run / Always Run или allow-list агента.
+- **В Cursor висит Allow / Run** → только IDE; **хука «карточка показана» у Cursor нет**. При `/start` + `session_notify=1` пинг ставится в очередь и **снимается**, если за `wait_ping_delay_sec` пришёл `afterShell` / `postToolUse` (команда уже пробежала → в Telegram тихо). Долгий авто-run всё ещё может дать ложный пинг; `approve_shell_mode=all` — следить за каждым shell.
 - «да» / «ok» — обычный follow-up при ожидании стопа, не ответ на approve.
 
 ## Новые скиллы
