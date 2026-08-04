@@ -149,7 +149,7 @@ describe("parseConfig", () => {
   it("defaults session_notify and wait_ping_delay_sec", () => {
     const cfg = parseConfig("locale=en\nnotify_stop=1\n");
     assert.equal(cfg.session_notify, "1");
-    assert.equal(cfg.wait_ping_delay_sec, 12);
+    assert.equal(cfg.wait_ping_delay_sec, 120);
     assert.equal(cfg.session_allow_min, undefined);
     assert.equal(cfg.approve_wait_sec, undefined);
   });

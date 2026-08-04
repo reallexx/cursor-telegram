@@ -85,9 +85,9 @@ export function finalizeConfig(base) {
   cfg.locale = resolveLocale(cfg.locale ?? process.env.TELEGRAM_LOCALE ?? "auto");
   cfg.session_notify = String(cfg.session_notify ?? "1").toLowerCase();
   // Delay before Telegram wait-ping: cancel if afterShell/postToolUse arrives first
-  const wpd = Number(cfg.wait_ping_delay_sec ?? "12");
+  const wpd = Number(cfg.wait_ping_delay_sec ?? "120");
   cfg.wait_ping_delay_sec =
-    Number.isFinite(wpd) && wpd >= 1 ? Math.min(wpd, 120) : 12;
+    Number.isFinite(wpd) && wpd >= 1 ? Math.min(wpd, 600) : 120;
   return cfg;
 }
 
@@ -879,7 +879,7 @@ export function cancelWaitPingForCommand(kind, detail, cwd = "") {
  * Best-effort stand-in for “Run/Allow still waiting” — Cursor has no UI-shown hook.
  */
 export async function flushDueWaitPings(cfg) {
-  const delayMs = Math.max(1, Number(cfg.wait_ping_delay_sec) || 6) * 1000;
+  const delayMs = Math.max(1, Number(cfg.wait_ping_delay_sec) || 120) * 1000;
   const entries = readWaitPending();
   const now = Date.now();
   const due = Object.values(entries).filter(

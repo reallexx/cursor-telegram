@@ -78,7 +78,7 @@ Legacy aliases: `/resume` → `/start`; `/stop` / `/pause` → `/mute` (kept so 
 | `followup_wait_sec=forever` | Wait for Continue/text (capped by hook timeout ≈ 24d) |
 | `approve_shell` / `approve_mcp` | Wait-ping filter (`1`/`0`); `*_mode=sensitive` (heuristic) or `all` (every shell/MCP) |
 | `session_notify` | `1` = deferred wait-ping (see below) |
-| `wait_ping_delay_sec` | Seconds to wait before pinging (default `12`); cancelled if the command finishes first |
+| `wait_ping_delay_sec` | Seconds to wait before pinging (default `120`); cancelled if the command finishes first |
 | `locale` | `auto` (OS) · `ru` · `en` — bot UI language (also `TELEGRAM_LOCALE`) |
 
 **Important:** in `hooks.json`, `timeout` for stop/approve must be **≤ 2147000** (seconds). Larger values overflow int32 ms and kill the hook immediately.

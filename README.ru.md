@@ -69,7 +69,7 @@ PowerShell:
 | `followup_wait_sec=forever` | Ждать Continue/текст (лимит ≈ timeout хука ~24д) |
 | `approve_shell` / `approve_mcp` | Фильтр пингов (`1`/`0`); `*_mode=sensitive` (эвристика) или `all` (каждый shell/MCP) |
 | `session_notify` | `1` = отложенный wait-ping (см. ниже) |
-| `wait_ping_delay_sec` | Секунд до пинга (по умолчанию `12`); отмена, если команда успела завершиться |
+| `wait_ping_delay_sec` | Секунд до пинга (по умолчанию `120` = 2 мин); отмена, если команда успела завершиться |
 | `locale` | `auto` (ОС) · `ru` · `en` — язык бота (или env `TELEGRAM_LOCALE`) |
 
 В `hooks.json` у stop/approve **`timeout` ≤ 2147000** секунд. Больше → переполнение int32 → хук умирает сразу.
