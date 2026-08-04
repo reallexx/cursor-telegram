@@ -504,11 +504,8 @@ export async function syncTelegramBotCommands(cfg) {
   const commands = [
     { command: "menu", description: t(L, "cmd_menu") },
     { command: "status", description: t(L, "cmd_status") },
-    { command: "away", description: t(L, "cmd_away") },
-    { command: "home", description: t(L, "cmd_home") },
-    { command: "pause", description: t(L, "cmd_pause") },
-    { command: "resume", description: t(L, "cmd_resume") },
-    { command: "help", description: t(L, "cmd_help") },
+    { command: "start", description: t(L, "cmd_start") },
+    { command: "mute", description: t(L, "cmd_mute") },
   ];
   try {
     await tg(cfg.token, "setMyCommands", { commands });

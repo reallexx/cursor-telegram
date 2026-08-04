@@ -16,32 +16,13 @@ const STRINGS = {
     yes: "да",
     no: "нет",
 
-    allow_for: "⏱ Разрешить на {dur}",
-    allow: "✅ Разрешить",
-    deny: "❌ Отклонить",
-    allowed_once: "✅ <b>Разрешено</b> (один раз)",
-    allowed_for: "✅ <b>Разрешено на {dur}</b>",
-    denied: "❌ <b>Отклонено</b>",
-    approve_timeout: "⌛ <b>Время вышло — отклонено</b>",
-    approve_tip_allow: "Разрешено",
-    approve_tip_session: "На сессию",
-    approve_tip_deny: "Отклонено",
-    approve_late: "Поздно — запрос уже закрыт",
     shell_title: "Команда shell",
     project: "Проект",
-    folder: "Папка",
-    early_ping:
-      "👀 <b>Нужно подтверждение</b> · в Cursor тоже может висеть <b>Run</b> — это отдельно от бота, нажми там",
-    session_auto:
-      "⚡ <b>Авто по сессии</b> ({family})\nПроект: {project}\nЕсли в Cursor висит <b>Run</b> — нажми <b>Run</b> (бот уже разрешил, IDE — второй слой).",
-    home_wait:
-      "👀 <b>Ждёт подтверждения в Cursor</b>\n{family}\nПроект: {project}\nБот не блокирует (/home). Если висит <b>Allow</b> / <b>Run</b> — нажми в IDE.",
-    deny_user: "Отклонено в Telegram",
-    deny_agent: "Blocked: denied in Telegram approval.",
-    timeout_user: "Время подтверждения в Telegram истекло",
-    timeout_agent: "Blocked: Telegram approval timed out.",
-    missing_cfg_user: "Telegram approve: missing token/chat_id",
-    missing_cfg_agent: "Blocked: Telegram approval config incomplete.",
+    no_folder: "Cursor (без папки)",
+    wait_ping:
+      "👀 <b>Allow / Run в Cursor?</b>\n{family} · {project}\nЕсли в IDE висит кнопка <b>Allow</b> / <b>Run</b> — нажми её в чате этого проекта.",
+    cmd_retired:
+      "Команда больше не используется.\nВкл: /start · Выкл: /mute · Статус: /status",
 
     agent: "Агент",
     status_completed: "завершён",
@@ -51,13 +32,14 @@ const STRINGS = {
     unknown: "неизвестно",
     questions: "Вопросы",
     questions_yes: "да — похоже, ждёт тебя",
-    questions_no: "нет / неясно",
+    questions_no: "нет",
+    questions_unknown: "неясно",
     summary: "Кратко",
     stop_hint:
       "Продолжить / reply → этот чат Cursor · просто текст → последний стоп · нужен открытый Cursor",
     btn_continue: "✍️ Продолжить",
-    btn_done: "✔ Готово",
-    stamp_done: "✔ <b>Готово</b>",
+    btn_done: "✅ Готово",
+    stamp_done: "✅ <b>Готово</b>",
     stamp_write_prompt: "✍️ <b>Напиши следующий промпт</b>",
     stamp_sent: "📨 <b>Промпт отправлен в Cursor</b>",
     tip_done: "Готово",
@@ -69,41 +51,28 @@ const STRINGS = {
     late_followup:
       "⌛ Поздно: Cursor закрыт или ожидание снято.\nContinue из бота уже нельзя — напиши в чат Cursor вручную.",
 
-    pause_msg:
-      "🔇 <b>Тишина</b>\n• Уведомления о стопе → выкл\n• Approve → авто-разрешение\nС дивана: /resume · Ушёл из дома: /away",
-    resume_msg:
-      "▶ <b>С дивана</b>\nСтоп-уведомления и «Продолжить» снова в боте.\nApprove у ПК не блокирует (/home). Ушёл: /away",
-    resume_msg_away:
-      "▶ <b>Тишина снята</b> (режим «отошёл»)\nСтоп в боте · sensitive shell/MCP по-прежнему спрашиваются.\nДомой: /home · Тишина: /pause",
+    mute_msg:
+      "🔇 <b>Бот выключен</b> (/mute)\nНет стоп-уведомлений и пингов Allow/Run.\nВключить: /start\n<i>Это не останавливает агента в Cursor.</i>",
+    start_msg:
+      "▶ <b>Бот включён</b> (/start)\nСтопы из чатов + Continue/reply · пинг если в Cursor Allow/Run.\nВыключить уведомления: /mute\n<i>Права агента — только в IDE; бот не жмёт Allow/Run.</i>",
     tip_busy: "Занято — нажми ещё раз через секунду",
-    away_msg:
-      "🛤 <b>Отошёл</b>\nТишина снята · sensitive shell/MCP спрашиваются в Telegram.\nВернулся к ПК: /home · Тишина: /pause",
-    home_msg:
-      "💻 <b>Дома</b>\nApprove не блокирует IDE.\nТишина: /pause · С дивана: /resume · Ушёл: /away",
+    approve_gone:
+      "Больше не подтверждается в Telegram — жми Allow/Run в Cursor",
     status_title: "<b>Cursor ↔ Telegram</b>",
-    status_mode: "Режим",
-    mode_away: "отошёл (approve в Telegram)",
-    mode_home: "дома (approve не блокирует)",
-    wait_home_off: "выкл дома",
-    stop_hint_home: "",
-    status_silence: "Тишина",
-    status_paused: "Тишина",
+    status_bot: "Бот",
+    mode_mute: "выкл (/mute)",
+    mode_start: "вкл (/start)",
     status_notify: "Уведомления о стопе",
+    status_wait_ping: "Пинг Allow/Run",
     status_followup_wait: "Ожидание Continue",
-    status_approve_wait: "Ожидание approve",
-    status_session: "Сессия Allow",
-    status_log: "Лог: telegram.log",
     status_commands: "<b>Команды</b>",
     status_cmd_menu: "/menu — скиллы, review, режимы",
     status_cmd_status: "/status — этот статус",
-    status_cmd_away: "/away — ушёл: снять тишину + approve в Telegram",
-    status_cmd_home: "/home — дома: approve не блокирует IDE",
-    status_cmd_pause: "/pause — тишина (выкл notify, авто-allow)",
-    status_cmd_resume: "/resume — с дивана: стоп-сообщения в боте",
-    status_cmd_help: "/help — то же, что /status",
+    status_cmd_start: "/start — включить бота (стопы + пинги)",
+    status_cmd_mute: "/mute — выключить уведомления бота",
     status_locale: "Язык",
     listen_hello:
-      "🎧 <b>Слушатель запущен</b>\nПо умолчанию: дома + тишина.\nС дивана: /resume · Ушёл: /away · Справка: /status",
+      "🎧 <b>Слушатель запущен</b>\nПо умолчанию /mute. Включить: /start · Статус: /status",
     compose_waiting:
       "⏳ Нет активного стопа — префикс из /menu сохранён.\nДождись стопа или reply на нужное сообщение / «Продолжить».",
 
@@ -144,11 +113,8 @@ const STRINGS = {
     menu_mode_desc: "режим агента (инструкция в промпте)",
     cmd_menu: "Скиллы, review, режимы",
     cmd_status: "Статус Cursor↔Telegram",
-    cmd_away: "Ушёл — тишина off + approve в Telegram",
-    cmd_home: "Дома — approve не блокирует IDE",
-    cmd_pause: "Тишина — выкл notify",
-    cmd_resume: "С дивана — стоп в боте",
-    cmd_help: "Справка",
+    cmd_start: "Включить бота",
+    cmd_mute: "Выключить уведомления бота",
 
     mode_agent:
       "[Режим Agent] Работай в режиме Agent: можно исследовать и вносить правки по задаче.\n\n",
@@ -171,32 +137,13 @@ const STRINGS = {
     yes: "yes",
     no: "no",
 
-    allow_for: "⏱ Allow for {dur}",
-    allow: "✅ Allow",
-    deny: "❌ Deny",
-    allowed_once: "✅ <b>Allowed</b> (once)",
-    allowed_for: "✅ <b>Allowed for {dur}</b>",
-    denied: "❌ <b>Denied</b>",
-    approve_timeout: "⌛ <b>Timed out — denied</b>",
-    approve_tip_allow: "Allowed",
-    approve_tip_session: "For session",
-    approve_tip_deny: "Denied",
-    approve_late: "Too late — request already closed",
     shell_title: "Shell command",
     project: "Project",
-    folder: "Folder",
-    early_ping:
-      "👀 <b>Approval needed</b> · Cursor may also show <b>Run</b> — that's separate from the bot, tap it there",
-    session_auto:
-      "⚡ <b>Auto-allowed by session</b> ({family})\nProject: {project}\nIf Cursor shows <b>Run</b> — tap <b>Run</b> (bot already allowed; IDE is a second gate).",
-    home_wait:
-      "👀 <b>Waiting for confirmation in Cursor</b>\n{family}\nProject: {project}\nBot does not block (/home). If <b>Allow</b> / <b>Run</b> is stuck — tap it in the IDE.",
-    deny_user: "Denied in Telegram",
-    deny_agent: "Blocked: denied in Telegram approval.",
-    timeout_user: "Telegram approval timed out",
-    timeout_agent: "Blocked: Telegram approval timed out.",
-    missing_cfg_user: "Telegram approve: missing token/chat_id",
-    missing_cfg_agent: "Blocked: Telegram approval config incomplete.",
+    no_folder: "Cursor (no folder)",
+    wait_ping:
+      "👀 <b>Allow / Run in Cursor?</b>\n{family} · {project}\nIf the IDE shows an <b>Allow</b> / <b>Run</b> prompt — tap it in that project's chat.",
+    cmd_retired:
+      "That command is no longer used.\nOn: /start · Mute: /mute · Status: /status",
 
     agent: "Agent",
     status_completed: "completed",
@@ -206,13 +153,14 @@ const STRINGS = {
     unknown: "unknown",
     questions: "Questions",
     questions_yes: "yes — looks like it's waiting",
-    questions_no: "no / unclear",
+    questions_no: "no",
+    questions_unknown: "unclear",
     summary: "Summary",
     stop_hint:
       "Continue / reply → this Cursor chat · plain text → latest stop · Cursor must be open",
     btn_continue: "✍️ Continue",
-    btn_done: "✔ Done",
-    stamp_done: "✔ <b>Done</b>",
+    btn_done: "✅ Done",
+    stamp_done: "✅ <b>Done</b>",
     stamp_write_prompt: "✍️ <b>Send the next prompt</b>",
     stamp_sent: "📨 <b>Prompt sent to Cursor</b>",
     tip_done: "Done",
@@ -224,42 +172,29 @@ const STRINGS = {
     late_followup:
       "⌛ Too late: Cursor closed or the wait ended.\nContinue from the bot is no longer possible — type in the Cursor chat.",
 
-    pause_msg:
-      "🔇 <b>Silence</b>\n• Stop notifications → off\n• Approvals → auto-allow\nCouch: /resume · Left home: /away",
-    resume_msg:
-      "▶ <b>Couch mode</b>\nStop notifications and Continue are on again.\nApprove still does not block at home (/home). Left: /away",
-    resume_msg_away:
-      "▶ <b>Silence cleared</b> (still away)\nStop messages on · sensitive shell/MCP still asked in Telegram.\nHome: /home · Silence: /pause",
+    mute_msg:
+      "🔇 <b>Bot muted</b> (/mute)\nNo stop notifications or Allow/Run pings.\nEnable: /start\n<i>This does not stop the Cursor agent.</i>",
+    start_msg:
+      "▶ <b>Bot on</b> (/start)\nChat stops + Continue/reply · ping if Cursor shows Allow/Run.\nMute notifications: /mute\n<i>Agent permissions stay in the IDE; the bot cannot tap Allow/Run.</i>",
     tip_busy: "Busy — tap again",
-    away_msg:
-      "🛤 <b>Away</b>\nSilence cleared · sensitive shell/MCP asked in Telegram.\nBack at PC: /home · Silence: /pause",
-    home_msg:
-      "💻 <b>Home</b>\nApprove does not block the IDE.\nSilence: /pause · Couch: /resume · Left: /away",
+    approve_gone:
+      "No longer approved in Telegram — tap Allow/Run in Cursor",
     status_title: "<b>Cursor ↔ Telegram</b>",
-    status_mode: "Mode",
-    mode_away: "away (approve in Telegram)",
-    mode_home: "home (approve does not block)",
-    wait_home_off: "off at home",
-    stop_hint_home: "",
-    status_silence: "Silence",
-    status_paused: "Silence",
+    status_bot: "Bot",
+    mode_mute: "muted (/mute)",
+    mode_start: "on (/start)",
     status_notify: "Stop notifications",
+    status_wait_ping: "Allow/Run ping",
     status_followup_wait: "Continue wait",
-    status_approve_wait: "Approve wait",
-    status_session: "Session allow",
-    status_log: "Log: telegram.log",
     status_commands: "<b>Commands</b>",
     status_cmd_menu: "/menu — skills, review, modes",
     status_cmd_status: "/status — this status",
-    status_cmd_away: "/away — left: unmute + approve in Telegram",
-    status_cmd_home: "/home — at home: approve does not block IDE",
-    status_cmd_pause: "/pause — silence (mute notify, auto-allow)",
-    status_cmd_resume: "/resume — couch: stop messages in the bot",
-    status_cmd_help: "/help — same as /status",
+    status_cmd_start: "/start — turn bot on (stops + pings)",
+    status_cmd_mute: "/mute — mute bot notifications",
     status_locale: "Language",
 
     listen_hello:
-      "🎧 <b>Listener started</b>\nDefault: home + silence.\nCouch: /resume · Away: /away · Help: /status",
+      "🎧 <b>Listener started</b>\nDefault: /mute. Enable: /start · Status: /status",
     compose_waiting:
       "⏳ No active stop — /menu prefix kept.\nWait for a stop, reply to that message, or tap Continue.",
 
@@ -298,11 +233,8 @@ const STRINGS = {
     menu_mode_desc: "agent mode (instruction in the prompt)",
     cmd_menu: "Skills, review, modes",
     cmd_status: "Cursor↔Telegram status",
-    cmd_away: "Away — unmute + approve in Telegram",
-    cmd_home: "Home — approve does not block IDE",
-    cmd_pause: "Silence — mute notify",
-    cmd_resume: "Couch — stop messages in bot",
-    cmd_help: "Help",
+    cmd_start: "Turn bot on",
+    cmd_mute: "Mute bot notifications",
 
     mode_agent:
       "[Agent mode] Work in Agent mode: explore and make edits as needed for the task.\n\n",
@@ -377,8 +309,4 @@ export function formatDuration(locale, minutes) {
   if (h) parts.push(`${h} ${t(locale, "unit_h")}`);
   if (min) parts.push(`${min} ${t(locale, "unit_min")}`);
   return parts.length ? parts.join(" ") : `0 ${t(locale, "unit_min")}`;
-}
-
-export function formatAllowForLabel(locale, minutes) {
-  return t(locale, "allow_for", { dur: formatDuration(locale, minutes) });
 }

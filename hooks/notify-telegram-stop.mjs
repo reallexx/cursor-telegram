@@ -34,6 +34,7 @@ const {
   PENDING_BUSY,
   closedFollowupHtml,
   waitForParkedFollowup,
+  detectAssistantQuestions,
   tlog,
   parseHookPayload,
   t,
@@ -64,7 +65,7 @@ function stripNoise(text) {
 
 function summarizeTranscript(transcriptPath) {
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
-    return { summary: "(транскрипт недоступен)", hasQuestions: false };
+    return { summary: "(транскрипт недоступен)", questions: "unknown" };
   }
 
   const lines = fs.readFileSync(transcriptPath, "utf8").split(/\r?\n/).filter(Boolean);
@@ -85,18 +86,12 @@ function summarizeTranscript(transcriptPath) {
   }
 
   if (!lastAssistant) {
-    return { summary: "(нет текста ассистента)", hasQuestions: false };
+    return { summary: "(нет текста ассистента)", questions: "unknown" };
   }
-
-  const hasQuestions =
-    /[?？]/.test(lastAssistant) ||
-    /\b(уточн|вопрос|нужно ли|можешь ли|подтверд|продолж|want me to|should I|can I)\b/i.test(
-      lastAssistant
-    );
 
   let summary = lastAssistant;
   if (summary.length > MAX_SUMMARY) summary = "…" + summary.slice(-MAX_SUMMARY);
-  return { summary, hasQuestions };
+  return { summary, questions: detectAssistantQuestions(lastAssistant) };
 }
 
 function statusLabel(locale, status) {
@@ -111,13 +106,18 @@ function buildHtml({
   project,
   model,
   summary,
-  hasQuestions,
+  questions,
   waitSec,
   locale,
 }) {
   const L = locale || "en";
   const waitLabel = formatWaitLabel(L, waitSec);
-  const q = hasQuestions ? t(L, "questions_yes") : t(L, "questions_no");
+  const q =
+    questions === "yes"
+      ? t(L, "questions_yes")
+      : questions === "unknown"
+        ? t(L, "questions_unknown")
+        : t(L, "questions_no");
   const lines = [
     `${statusEmoji(status)} <b>${t(L, "agent")}: ${escapeHtml(statusLabel(L, status))}</b>`,
     `<b>${t(L, "project")}:</b> ${escapeHtml(project)}`,
@@ -156,8 +156,7 @@ function shouldNotify(payload, { summary }) {
 }
 
 function resolveFollowupWait(cfg) {
-  // Continue / reply-to-chat always available when configured.
-  // /away only gates shell approve — not stop follow-up.
+  // Continue / reply-to-chat when configured (active bot /start, not silence).
   if (cfg.followup_wait_sec) return cfg.followup_wait_sec;
   if (cfg.reply_wait_sec) return cfg.reply_wait_sec;
   return 0;
@@ -193,8 +192,11 @@ async function main() {
 
   const status = payload.status || "unknown";
   const model = payload.model_id || payload.model || "";
-  const project = projectName(payload.workspace_roots, payload.transcript_path);
-  const { summary, hasQuestions } = summarizeTranscript(payload.transcript_path);
+  const project = projectName(payload.workspace_roots, payload.transcript_path, {
+    cwd: payload.cwd,
+    locale: cfg.locale || "en",
+  });
+  const { summary, questions } = summarizeTranscript(payload.transcript_path);
 
   if (!shouldNotify(payload, { summary })) {
     tlog(
@@ -213,7 +215,7 @@ async function main() {
     project,
     model,
     summary,
-    hasQuestions,
+    questions,
     waitSec,
     locale: L,
   });

@@ -8,7 +8,6 @@ import {
   t,
   formatWaitLabel,
   formatDuration,
-  formatAllowForLabel,
 } from "./telegram-i18n.mjs";
 
 export {
@@ -17,14 +16,12 @@ export {
   t,
   formatWaitLabel,
   formatDuration,
-  formatAllowForLabel,
 };
 
 export const CURSOR_DIR = path.join(os.homedir(), ".cursor");
 export const CONFIG_PATH = path.join(CURSOR_DIR, "telegram.txt");
 export const LOCAL_PATH = path.join(CURSOR_DIR, "telegram.local");
 export const OFFSET_PATH = path.join(CURSOR_DIR, "telegram-offset.json");
-export const SESSION_ALLOW_PATH = path.join(CURSOR_DIR, "telegram-session-allow.json");
 export const CONTROL_PATH = path.join(CURSOR_DIR, "telegram-control.json");
 export const POLL_LOCK_PATH = path.join(CURSOR_DIR, "telegram-poll.lock");
 export const POLL_PRIORITY_PATH = path.join(CURSOR_DIR, "telegram-poll-priority.json");
@@ -32,7 +29,10 @@ export const LISTEN_PID_PATH = path.join(CURSOR_DIR, "telegram-listen.pid");
 export const LOG_PATH = path.join(CURSOR_DIR, "telegram.log");
 export const PENDING_PATH = path.join(CURSOR_DIR, "telegram-pending.json");
 export const PENDING_LOCK_PATH = path.join(CURSOR_DIR, "telegram-pending.lock");
-export const HOME_NOTIFY_PATH = path.join(CURSOR_DIR, "telegram-home-notify.json");
+/** Throttle file for Allow/Run wait pings (legacy name kept for existing installs). */
+export const WAIT_NOTIFY_PATH = path.join(CURSOR_DIR, "telegram-home-notify.json");
+/** @deprecated use WAIT_NOTIFY_PATH */
+export const HOME_NOTIFY_PATH = WAIT_NOTIFY_PATH;
 
 function parseKeyValues(raw) {
   const cfg = {};
@@ -74,16 +74,12 @@ export function finalizeConfig(base) {
   cfg.reply_wait_sec = parseWait(cfg, "reply_wait_sec", 0, "off");
   // Wait after stop for Continue button / follow-up text (0 = notify only)
   cfg.followup_wait_sec = parseWait(cfg, "followup_wait_sec", 300, "off");
-  cfg.approve_wait_sec = parseWait(cfg, "approve_wait_sec", Infinity, "forever");
   cfg.approve_shell = String(cfg.approve_shell ?? "1").toLowerCase();
   cfg.approve_shell_mode = String(cfg.approve_shell_mode ?? "sensitive").toLowerCase();
   cfg.approve_mcp = String(cfg.approve_mcp ?? "1").toLowerCase();
   cfg.approve_mcp_mode = String(cfg.approve_mcp_mode ?? "sensitive").toLowerCase();
   cfg.notify_stop = String(cfg.notify_stop ?? "1").toLowerCase();
   cfg.early_ping = String(cfg.early_ping ?? "1").toLowerCase();
-
-  const sam = Number(cfg.session_allow_min ?? "60");
-  cfg.session_allow_min = Number.isFinite(sam) && sam > 0 ? sam : 60;
   cfg.locale = resolveLocale(cfg.locale ?? process.env.TELEGRAM_LOCALE ?? "auto");
   cfg.session_notify = String(cfg.session_notify ?? "1").toLowerCase();
   return cfg;
@@ -150,39 +146,8 @@ export function shortId() {
   return crypto.randomBytes(4).toString("hex");
 }
 
-export function fingerprint(kind, detail) {
-  const h = crypto.createHash("sha256");
-  h.update(String(kind || ""));
-  h.update("\0");
-  h.update(String(detail || "").trim().replace(/\s+/g, " ").slice(0, 400));
-  return h.digest("hex").slice(0, 24);
-}
-
-/** Normalize cwd so the same project folder matches across slash styles. */
-function normalizeCwdKey(cwd) {
-  return String(cwd || "")
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/\/+$/, "")
-    .toLowerCase();
-}
-
-/** Families where "Allow for N" is useful (will match future similar commands). */
-const REUSABLE_SHELL_FAMILIES = new Set([
-  "shell:git-push",
-  "shell:git-commit",
-  "shell:npm-publish",
-  "shell:gh-repo-delete",
-  "shell:docker-push",
-  "shell:kubectl-apply",
-  "shell:network",
-  "shell:remote-copy",
-  "shell:destructive-delete",
-]);
-
 /**
- * Coarse family for session-allow (not the full command text).
- * So "Allow for 7d" on one `git push …` covers later pushes in the same cwd.
+ * Coarse family for wait-ping throttle keys.
  */
 export function commandFamily(kind, detail, { toolName } = {}) {
   if (kind === "mcp") {
@@ -208,7 +173,6 @@ export function commandFamily(kind, detail, { toolName } = {}) {
     return "shell:destructive-delete";
   }
 
-  // One-off / unknown — not reused for session-allow button
   const bare = c
     .replace(/("[^"]*"|'[^']*')/g, " ")
     .replace(/\s+/g, " ")
@@ -220,82 +184,48 @@ export function commandFamily(kind, detail, { toolName } = {}) {
   return `shell:${bare || "cmd"}`;
 }
 
-/** True when the middle "Allow for N" button will actually help next time. */
-export function isSessionAllowUseful(kind, detail, { toolName } = {}) {
-  const family = commandFamily(kind, detail, { toolName });
-  if (String(family).startsWith("mcp:")) return true;
-  return REUSABLE_SHELL_FAMILIES.has(family);
-}
-
-/** Session-allow key: family + project cwd (not full command body). */
-export function sessionFingerprint(kind, detail, { cwd, toolName } = {}) {
-  const family = commandFamily(kind, detail, { toolName });
-  return fingerprint(kind, `${family}\0${normalizeCwdKey(cwd)}`);
-}
-
-function readSessionAllow() {
-  try {
-    const j = JSON.parse(fs.readFileSync(SESSION_ALLOW_PATH, "utf8"));
-    const now = Date.now();
-    const entries = (j.entries || []).filter((e) => e && e.fp && e.until > now);
-    return entries;
-  } catch {
-    return [];
-  }
-}
-
-function writeSessionAllow(entries) {
-  fs.writeFileSync(
-    SESSION_ALLOW_PATH,
-    JSON.stringify({ entries, updated_at: new Date().toISOString() }, null, 2),
-    "utf8"
+/** Human label for wait pings: "Task", "git-push", … */
+export function formatWaitFamilyLabel(family) {
+  return (
+    String(family || "")
+      .replace(/^mcp:/i, "")
+      .replace(/^shell:/i, "")
+      .trim() || "tool"
   );
-}
-
-export function isSessionAllowed(fp) {
-  return readSessionAllow().some((e) => e.fp === fp);
-}
-
-export function grantSessionAllow(fp, minutes) {
-  const entries = readSessionAllow().filter((e) => e.fp !== fp);
-  entries.push({ fp, until: Date.now() + Math.max(1, minutes) * 60 * 1000 });
-  writeSessionAllow(entries);
 }
 
 export function readControl() {
   try {
     const j = JSON.parse(fs.readFileSync(CONTROL_PATH, "utf8"));
     return {
-      // Silence (pause): mute stop notify + auto-allow approve
+      // Silence (/mute): no stop notify / wait pings; hooks always allow
       paused: !!j.paused,
-      // Away: explicit Telegram approve for sensitive shell/MCP
-      away: !!j.away,
       updated_at: j.updated_at || null,
     };
   } catch {
-    // Default: home + silence
-    return { paused: true, away: false, updated_at: null };
+    // Default: muted
+    return { paused: true, updated_at: null };
   }
 }
 
 export function writeControl(partial) {
   const cur = readControl();
   const next = {
-    ...cur,
+    paused: !!cur.paused,
     ...partial,
     updated_at: new Date().toISOString(),
   };
-  fs.writeFileSync(CONTROL_PATH, JSON.stringify(next, null, 2), "utf8");
-  return next;
+  next.paused = !!next.paused;
+  fs.writeFileSync(
+    CONTROL_PATH,
+    JSON.stringify({ paused: next.paused, updated_at: next.updated_at }, null, 2),
+    "utf8"
+  );
+  return { paused: next.paused, updated_at: next.updated_at };
 }
 
 export function isPaused() {
   return readControl().paused;
-}
-
-/** When false (default), Telegram is notify-only and must not wait/block the IDE. */
-export function isAway() {
-  return readControl().away;
 }
 
 function readJsonSafe(file, fallback = null) {
@@ -443,57 +373,67 @@ export function releaseListenSingleton() {
   }
 }
 
-/** Handle /status /pause /resume /away /home /help. Returns true if consumed. */
-export async function handleBotCommand(cfg, text) {
+/**
+ * Classify bot slash-commands. null = not ours (may fall through as follow-up text).
+ * @returns {{ cmd: string, type: 'mute'|'start'|'status'|'menu'|'retired' } | null}
+ */
+export function parseBotCommand(text) {
   const raw = String(text || "").trim();
-  if (!raw.startsWith("/")) return false;
+  if (!raw.startsWith("/")) return null;
   const cmd = raw.split(/\s+/)[0].toLowerCase().replace(/@[\w_]+$/, "");
+  if (cmd === "/mute" || cmd === "/stop" || cmd === "/pause") {
+    return { cmd, type: "mute" };
+  }
+  if (cmd === "/start" || cmd === "/resume") return { cmd, type: "start" };
+  if (cmd === "/status" || cmd === "/help") return { cmd, type: "status" };
+  if (cmd === "/menu" || cmd === "/skills") return { cmd, type: "menu" };
+  // Removed modes — must not inject into Cursor as follow-up text
+  if (cmd === "/away" || cmd === "/home" || cmd === "/ide") {
+    return { cmd, type: "retired" };
+  }
+  return null;
+}
+
+/** Handle /start /mute /status /menu (+ legacy aliases). Returns true if consumed. */
+export async function handleBotCommand(cfg, text) {
+  const parsed = parseBotCommand(text);
+  if (!parsed) return false;
+  const { cmd, type } = parsed;
 
   const L = cfg.locale || "en";
-  if (cmd === "/away") {
-    // Leave home: unmute + explicit Telegram approve
-    writeControl({ away: true, paused: false });
+  if (type === "retired") {
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
-      text: t(L, "away_msg"),
+      text: t(L, "cmd_retired"),
       parse_mode: "HTML",
       disable_web_page_preview: true,
     });
+    tlog(`command retired ${cmd}`);
     return true;
   }
-  if (cmd === "/home" || cmd === "/ide") {
-    // Back at PC: approve no longer gates (silence unchanged)
-    writeControl({ away: false });
-    await tg(cfg.token, "sendMessage", {
-      chat_id: cfg.chat_id,
-      text: t(L, "home_msg"),
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
-    return true;
-  }
-  if (cmd === "/pause") {
+  // /mute = bot silence (not Cursor agent stop). Legacy: /stop /pause
+  if (type === "mute") {
     writeControl({ paused: true });
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
-      text: t(L, "pause_msg"),
+      text: t(L, "mute_msg"),
       parse_mode: "HTML",
       disable_web_page_preview: true,
     });
     return true;
   }
-  if (cmd === "/resume") {
-    // Leave silence: stop notifies + Continue (home or away unchanged)
-    const ctrl = writeControl({ paused: false });
+  // /start = active bot (Telegram entry). Legacy: /resume
+  if (type === "start") {
+    writeControl({ paused: false });
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
-      text: ctrl.away ? t(L, "resume_msg_away") : t(L, "resume_msg"),
+      text: t(L, "start_msg"),
       parse_mode: "HTML",
       disable_web_page_preview: true,
     });
     return true;
   }
-  if (cmd === "/status" || cmd === "/help" || cmd === "/start") {
+  if (type === "status") {
     const ctrl = readControl();
     const onOff = (v) =>
       ["1", "true", "on", "yes"].includes(String(v).toLowerCase())
@@ -506,38 +446,27 @@ export async function handleBotCommand(cfg, text) {
     };
     const lines = [
       t(L, "status_title"),
-      `${t(L, "status_mode")}: <b>${ctrl.away ? t(L, "mode_away") : t(L, "mode_home")}</b>`,
-      `${t(L, "status_silence")}: <b>${ctrl.paused ? t(L, "yes") : t(L, "no")}</b>`,
+      `${t(L, "status_bot")}: <b>${
+        ctrl.paused ? t(L, "mode_mute") : t(L, "mode_start")
+      }</b>`,
       `${t(L, "status_notify")}: ${
         ctrl.paused ? t(L, "off") : onOff(cfg.notify_stop)
       }`,
-      `Approve shell: ${onOff(cfg.approve_shell)} (${cfg.approve_shell_mode})`,
-      `Approve MCP: ${onOff(cfg.approve_mcp)} (${cfg.approve_mcp_mode})`,
+      `${t(L, "status_wait_ping")}: ${
+        ctrl.paused ? t(L, "off") : onOff(cfg.session_notify ?? "1")
+      }`,
       `${t(L, "status_followup_wait")}: ${
         ctrl.paused ? t(L, "off") : waitLabel(cfg.followup_wait_sec)
       }`,
-      `${t(L, "status_approve_wait")}: ${
-        ctrl.paused
-          ? t(L, "off")
-          : ctrl.away
-            ? waitLabel(cfg.approve_wait_sec)
-            : t(L, "wait_home_off")
-      }`,
-      `${t(L, "status_session")}: ${formatDuration(L, cfg.session_allow_min)}`,
-      `Early ping: ${onOff(cfg.early_ping)}`,
       `${t(L, "status_locale")}: ${L}`,
-      t(L, "status_log"),
       "",
       t(L, "status_commands"),
       t(L, "status_cmd_menu"),
       t(L, "status_cmd_status"),
-      t(L, "status_cmd_resume"),
-      t(L, "status_cmd_pause"),
-      t(L, "status_cmd_away"),
-      t(L, "status_cmd_home"),
-      t(L, "status_cmd_help"),
+      t(L, "status_cmd_start"),
+      t(L, "status_cmd_mute"),
     ];
-    tlog(`command ${cmd} away=${ctrl.away} paused=${ctrl.paused}`);
+    tlog(`command ${cmd} paused=${ctrl.paused}`);
     await tg(cfg.token, "sendMessage", {
       chat_id: cfg.chat_id,
       text: lines.join("\n"),
@@ -546,7 +475,7 @@ export async function handleBotCommand(cfg, text) {
     });
     return true;
   }
-  if (cmd === "/menu" || cmd === "/skills") {
+  if (type === "menu") {
     const { sendMenuRoot } = await import("./telegram-menu.mjs");
     await sendMenuRoot(cfg);
     return true;
@@ -743,23 +672,82 @@ export async function waitForUpdate(
   return null;
 }
 
-export function projectName(workspaceRoots, transcriptPath) {
+/**
+ * Label for Telegram messages. Prefer tool cwd when it maps under a workspace root
+ * (more accurate than multi-root lists when several windows are open).
+ * @param {string[]|undefined} workspaceRoots
+ * @param {string|undefined} transcriptPath
+ * @param {{ cwd?: string }} [opts]
+ */
+function normalizePathKey(p) {
+  return String(p || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "");
+}
+
+function rootBasename(root) {
+  const norm = normalizePathKey(root);
+  return path.basename(norm) || norm;
+}
+
+/**
+ * Pick the longest workspace root that contains cwd (nested monorepo-safe).
+ * @returns {string|null}
+ */
+export function matchWorkspaceRoot(workspaceRoots, cwd) {
   const roots = Array.isArray(workspaceRoots) ? workspaceRoots : [];
+  const cwdNorm = normalizePathKey(cwd);
+  if (!cwdNorm) return null;
+  const a = cwdNorm.toLowerCase();
+  let best = null;
+  let bestLen = -1;
+  for (const r of roots) {
+    const rn = normalizePathKey(r);
+    if (!rn) continue;
+    const b = rn.toLowerCase();
+    if (a === b || a.startsWith(`${b}/`)) {
+      if (rn.length > bestLen) {
+        best = rn;
+        bestLen = rn.length;
+      }
+    }
+  }
+  return best;
+}
+
+export function projectName(workspaceRoots, transcriptPath, { cwd, locale } = {}) {
+  const roots = Array.isArray(workspaceRoots) ? workspaceRoots : [];
+  const hit = matchWorkspaceRoot(roots, cwd);
+  if (hit) return rootBasename(hit);
+  const cwdNorm = normalizePathKey(cwd);
+  if (cwdNorm) {
+    const base = path.basename(cwdNorm);
+    if (base) return base;
+  }
   if (roots.length) {
-    return roots
-      .map((root) => {
-        const norm = String(root).replace(/[\\/]+$/, "");
-        return path.basename(norm) || norm;
-      })
-      .join(", ");
+    return roots.map(rootBasename).filter(Boolean).join(", ");
   }
   // Home / empty window: Cursor still has a project slug in transcript path
   const m = String(transcriptPath || "").match(/[\\/]projects[\\/]([^\\/]+)[\\/]/i);
   if (m?.[1]) {
-    if (m[1] === "empty-window") return "Cursor (без папки)";
+    if (m[1] === "empty-window") return t(locale || "en", "no_folder");
     return m[1];
   }
-  return "Cursor (без папки)";
+  return t(locale || "en", "no_folder");
+}
+
+/** Heuristic: does assistant text look like it's asking the user something? */
+export function detectAssistantQuestions(text) {
+  const body = String(text || "").trim();
+  if (!body) return "unknown";
+  // Avoid \\b with Cyrillic — JS word boundaries are ASCII-oriented.
+  const has =
+    /[?？]/.test(body) ||
+    /(уточн|вопрос|нужно ли|можешь ли|подтверд|продолж|want me to|should I|can I)/i.test(
+      body
+    );
+  return has ? "yes" : "no";
 }
 
 export function isSensitiveShell(command) {
@@ -775,18 +763,18 @@ export function isSensitiveShell(command) {
   );
 }
 
-/** Tools that often leave an IDE Allow / subagent card (notify-only in /home). */
+/** Tools that often leave an IDE Allow / subagent card (notify-only when bot is active). */
 export function isIdeWaitTool(toolName) {
   const name = String(toolName || "");
   return /^(Task|AwaitShell|Await|best-of-n-runner|BestOfN)$/i.test(name);
 }
 
-/** Throttle home-mode wait pings (same key within window → skip). */
-export function shouldHomeWaitNotify(key, windowMs = 60000) {
+/** Throttle Allow/Run wait pings (same key within window → skip). */
+export function shouldWaitNotify(key, windowMs = 60000) {
   const k = String(key || "").trim() || "_";
   let map = {};
   try {
-    map = JSON.parse(fs.readFileSync(HOME_NOTIFY_PATH, "utf8")) || {};
+    map = JSON.parse(fs.readFileSync(WAIT_NOTIFY_PATH, "utf8")) || {};
   } catch {
     map = {};
   }
@@ -799,12 +787,15 @@ export function shouldHomeWaitNotify(key, windowMs = 60000) {
   }
   next[k] = now;
   try {
-    fs.writeFileSync(HOME_NOTIFY_PATH, JSON.stringify(next, null, 2), "utf8");
+    fs.writeFileSync(WAIT_NOTIFY_PATH, JSON.stringify(next, null, 2), "utf8");
   } catch {
     // ignore
   }
   return true;
 }
+
+/** @deprecated use shouldWaitNotify */
+export const shouldHomeWaitNotify = shouldWaitNotify;
 
 export function isSensitiveMcp(toolName, toolInput) {
   const name = String(toolName || "");
@@ -1051,139 +1042,6 @@ export function findFollowupByMessageId(messageId) {
       (p) => p.status === "waiting" && Number(p.message_id) === mid && isPidAlive(p.pid)
     ) || null
   );
-}
-
-export function upsertApprovePending(entry) {
-  try {
-    return withPendingLock(() => {
-      const store = readPendingStore();
-      store.approves = store.approves || {};
-      store.approves[entry.id] = {
-        ...store.approves[entry.id],
-        ...entry,
-        updated_at: new Date().toISOString(),
-      };
-      prunePendingStore(store);
-      writePendingStore(store);
-      return store.approves[entry.id];
-    });
-  } catch (err) {
-    tlog(`upsertApprovePending fail: ${err.message}`);
-    return null;
-  }
-}
-
-export function getApprovePending(id) {
-  const r = readPendingStoreRetry();
-  if (!r.ok) return PENDING_BUSY;
-  return r.store.approves?.[id] || null;
-}
-
-/** @returns {object[] | typeof PENDING_BUSY} */
-export function listApprovePending() {
-  const r = readPendingStoreRetry();
-  if (!r.ok) return PENDING_BUSY;
-  return Object.values(r.store.approves || {});
-}
-
-/** @returns {object | null | typeof PENDING_BUSY} */
-export function findApproveByMessageId(messageId) {
-  const mid = Number(messageId);
-  if (!Number.isFinite(mid)) return null;
-  const list = listApprovePending();
-  if (list === PENDING_BUSY) return PENDING_BUSY;
-  return (
-    list.find(
-      (p) => p.status === "waiting" && Number(p.message_id) === mid && isPidAlive(p.pid)
-    ) || null
-  );
-}
-
-export function parkApproveDecision(id, decision, callbackQueryId) {
-  return parkApproveDecisionIfWaiting(id, decision, callbackQueryId).ok;
-}
-
-/** Atomic: park only if approve still waiting and pid alive. */
-export function parkApproveDecisionIfWaiting(id, decision, callbackQueryId) {
-  if (!id || !["allow", "session", "deny"].includes(decision)) {
-    return { ok: false, reason: "bad_args" };
-  }
-  try {
-    return withPendingLock(() => {
-      const store = readPendingStore();
-      const p = store.approves?.[id];
-      if (!p || p.status !== "waiting") return { ok: false, reason: "not_waiting" };
-      if (!isPidAlive(p.pid)) return { ok: false, reason: "dead" };
-      store.approves[id] = {
-        ...p,
-        parked_decision: decision,
-        parked_callback_query_id: callbackQueryId || null,
-        updated_at: new Date().toISOString(),
-      };
-      writePendingStore(store);
-      tlog(`approve ${id} parked_decision=${decision} (atomic)`);
-      return { ok: true };
-    });
-  } catch {
-    return { ok: false, reason: "lock_timeout" };
-  }
-}
-
-export function takeParkedApproveDecision(id) {
-  try {
-    return withPendingLock(() => {
-      const store = readPendingStore();
-      const p = store.approves?.[id];
-      if (!p?.parked_decision) return null;
-      const value = {
-        decision: p.parked_decision,
-        callback_query_id: p.parked_callback_query_id || null,
-      };
-      store.approves[id] = {
-        ...p,
-        parked_decision: null,
-        parked_callback_query_id: null,
-        updated_at: new Date().toISOString(),
-      };
-      writePendingStore(store);
-      return value;
-    });
-  } catch {
-    return null;
-  }
-}
-
-export async function waitForParkedApprove(id, waitSec, { deadlineMs = null } = {}) {
-  if (!waitSec && deadlineMs == null) return null;
-  const forever = deadlineMs == null && !Number.isFinite(waitSec);
-  const deadline =
-    deadlineMs != null ? deadlineMs : forever ? Infinity : Date.now() + waitSec * 1000;
-
-  const pollOnce = () => {
-    const cur = getApprovePending(id);
-    if (cur === PENDING_BUSY) return null;
-    const st = cur?.status;
-    if (st && st !== "waiting") return { closed: true, status: st };
-    const parked = takeParkedApproveDecision(id);
-    if (parked) return { value: parked };
-    return null;
-  };
-
-  while (forever || Date.now() < deadline) {
-    const hit = pollOnce();
-    if (hit) return hit;
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return pollOnce();
-}
-
-export function parseApproveDecisionText(text) {
-  const t = String(text || "").trim().toLowerCase();
-  if (!t) return null;
-  if (/^(ok|yes|y|да|д|allow|approve|разрешить|\+)$/.test(t) || t === "✅") return "allow";
-  if (/^(session|s|час|1h|always|сессия)$/.test(t)) return "session";
-  if (/^(no|n|нет|deny|block|cancel|отклон|запрет|-)$/.test(t) || t === "❌") return "deny";
-  return null;
 }
 
 /**

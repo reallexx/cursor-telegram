@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Sole getUpdates consumer: followup buttons/text, approve buttons/text, /menu.
- * Stop/approve hooks wait on pending file only.
+ * Sole getUpdates consumer: followup buttons/text, /menu.
+ * Stop hooks wait on pending file only. Approve is notify-only (no Telegram gate).
  */
 
 import {
@@ -20,14 +20,9 @@ import {
   PENDING_BUSY,
   upsertFollowupPending,
   listFollowupPending,
-  listApprovePending,
   findFollowupByMessageId,
-  findApproveByMessageId,
   parkFollowupClick,
   parkFollowupText,
-  parkApproveDecision,
-  parkApproveDecisionIfWaiting,
-  parseApproveDecisionText,
   announceFollowupClosed,
   isPidAlive,
   touchPollLock,
@@ -47,17 +42,6 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function pickLatestWaiting(list) {
-  if (list === PENDING_BUSY) return PENDING_BUSY;
-  if (!Array.isArray(list)) return null;
-  const waiters = list.filter((p) => p.status === "waiting" && isPidAlive(p.pid));
-  if (!waiters.length) return null;
-  waiters.sort((a, b) =>
-    String(b.updated_at || "").localeCompare(String(a.updated_at || ""))
-  );
-  return waiters[0];
-}
-
 function pickFollowupForText(replyMessageId) {
   if (replyMessageId != null) {
     const byReply = findFollowupByMessageId(replyMessageId);
@@ -75,15 +59,6 @@ function pickFollowupForText(replyMessageId) {
     String(b.updated_at || "").localeCompare(String(a.updated_at || ""))
   );
   return waiters.find((p) => p.awaiting_text) || waiters[0];
-}
-
-function pickApproveTarget(replyMessageId) {
-  if (replyMessageId != null) {
-    const byReply = findApproveByMessageId(replyMessageId);
-    if (byReply === PENDING_BUSY) return PENDING_BUSY;
-    if (byReply) return byReply;
-  }
-  return pickLatestWaiting(listApprovePending());
 }
 
 async function handleFollowupCallback(cfg, cb) {
@@ -158,45 +133,21 @@ async function handleFollowupCallback(cfg, cb) {
   return true;
 }
 
-async function handleApproveCallback(cfg, cb) {
+/** Stale a:/s:/d: buttons from older builds — tip only, never gate the IDE. */
+async function handleStaleApproveCallback(cfg, cb) {
   const data = String(cb.data || "");
-  const m = data.match(/^([asd]):([a-f0-9]+)$/i);
-  if (!m) return false;
-  const map = { a: "allow", s: "session", d: "deny" };
-  const decision = map[m[1].toLowerCase()];
-  const id = m[2];
+  if (!/^([asd]):([a-f0-9]+)$/i.test(data)) return false;
   const L = cfg.locale || "en";
-
-  const parked = parkApproveDecisionIfWaiting(id, decision, cb.id);
-  if (!parked?.ok) {
-    const busy = parked?.reason === "lock_timeout";
-    try {
-      await tg(cfg.token, "answerCallbackQuery", {
-        callback_query_id: cb.id,
-        text: busy ? t(L, "tip_busy") : t(L, "approve_late"),
-        show_alert: true,
-      });
-    } catch {
-      // ignore
-    }
-    tlog(`approve ${id} late_click (${parked?.reason || "?"})`);
-    return true;
-  }
-
-  const tip =
-    decision === "allow"
-      ? t(L, "approve_tip_allow")
-      : decision === "session"
-        ? t(L, "approve_tip_session")
-        : t(L, "approve_tip_deny");
   try {
     await tg(cfg.token, "answerCallbackQuery", {
       callback_query_id: cb.id,
-      text: tip,
+      text: t(L, "approve_gone"),
+      show_alert: true,
     });
   } catch {
     // ignore
   }
+  tlog(`approve stale callback ${data.slice(0, 24)}`);
   return true;
 }
 
@@ -304,7 +255,7 @@ async function main() {
             } else if (/^[cx]:/i.test(data)) {
               await handleFollowupCallback(cfg, upd.callback_query);
             } else if (/^[asd]:/i.test(data)) {
-              await handleApproveCallback(cfg, upd.callback_query);
+              await handleStaleApproveCallback(cfg, upd.callback_query);
             }
             continue;
           }
@@ -315,36 +266,6 @@ async function main() {
 
             if (await handleBotCommand(cfg, text)) continue;
             if (!text) continue;
-
-            const approveDecision = parseApproveDecisionText(text);
-            if (approveDecision) {
-              const ap = pickApproveTarget(replyMid);
-              if (ap === PENDING_BUSY) {
-                try {
-                  await tg(cfg.token, "sendMessage", {
-                    chat_id: cfg.chat_id,
-                    text: t(cfg.locale || "en", "tip_busy"),
-                  });
-                } catch {
-                  // ignore
-                }
-                continue;
-              }
-              if (ap) {
-                if (parkApproveDecision(ap.id, approveDecision, null)) continue;
-                tlog(`approve ${ap.id} text-park fail`);
-                try {
-                  await tg(cfg.token, "sendMessage", {
-                    chat_id: cfg.chat_id,
-                    text: t(cfg.locale || "en", "tip_busy"),
-                  });
-                } catch {
-                  // ignore
-                }
-                continue;
-              }
-              // no approve waiting — fall through as normal followup text
-            }
 
             const { text: composed, usedCompose } = peekComposedText(text);
             const target = pickFollowupForText(replyMid);

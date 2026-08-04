@@ -2,7 +2,7 @@
   "name": "cursor-telegram",
   "version": "1.0.0",
   "private": true,
-  "description": "Cursor Agent ↔ Telegram: stop notifications, Continue from the bot, sensitive shell/MCP approval, skills menu",
+  "description": "Cursor Agent ↔ Telegram: stop notifications, Continue from the bot, Allow/Run wait pings, skills menu",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -10,7 +10,8 @@
   },
   "scripts": {
     "install:hooks": "node scripts/install.mjs",
-    "check": "node --check hooks/telegram-lib.mjs && node --check hooks/notify-telegram-stop.mjs && node --check hooks/approve-telegram.mjs && node --check hooks/telegram-listen.mjs && node --check hooks/telegram-menu.mjs"
+    "check": "node --check hooks/telegram-lib.mjs && node --check hooks/notify-telegram-stop.mjs && node --check hooks/approve-telegram.mjs && node --check hooks/telegram-listen.mjs && node --check hooks/telegram-menu.mjs",
+    "test": "node --test tests/"
   },
   "keywords": [
     "cursor",
